@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moonfill</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Header Banner -->
+  <header class="moon-header">
+    <div class="moon-title">
+      <h1>🌙 Moonfill</h1>
+      <span class="version">v1.2</span>
+    </div>
+    
+  </header>
+
+  <!-- Main extension body -->
+  <div class="extBody">
+    <div class="leftContainer">
+      <label for="digitInput">Advertiser ID</label>
+      <input type="text" id="digitInput" placeholder="Enter MID">
+    </div>
+
+    <div class="rightContainer">
+      <label for="regionSelect">Select Region:</label>
+      <select id="regionSelect">
+        <option value="GB">GB</option>
+        <option value="UK">UK</option>
+        <option value="FR">FR</option>
+        <option value="DE">DE</option>
+        <option value="US">US</option>
+        <option value="ES">ES</option>
+        <option value="IT">IT</option>
+        <option value="NL">NL</option>
+        <option value="BR">BR</option>
+        <option value="SE">SE</option>
+        <option value="PL">PL</option>
+        <option value="PT">PT</option>
+        <option value="AT">AT</option>
+        <option value="CH">CH</option>
+        <option value="IE">IE</option>
+      </select>
+    </div>
+  </div>
+
+  <button id="submitBtn" class="append-button">Submit</button>
+  <div class="space">
+    <h1></h1>
+     
+    </div>
+
+  <div class="moon-links">
+      <button class="icon-btn" id="portfolioBtn" title="Rodier's page">
+        <img src="assets/favicon.ico" alt="Portfolio">
+      </button>
+      <button class="icon-btn" id="githubBtn" title="GitHub Repo">
+        <img src="assets/github.svg" alt="GitHub">
+      </button>
+    </div>
+
+  <script src="popup.js"></script>
+  <script>
+    // open links in new tab
+    document.getElementById("portfolioBtn").addEventListener("click", () => {
+      chrome.tabs.create({ url: "https://rodiersangibala.chezyo.com/" });
+    });
+    document.getElementById("githubBtn").addEventListener("click", () => {
+      chrome.tabs.create({ url: "https://github.com" });
+    });
+  </script>
+</body>
+</html>

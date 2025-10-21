@@ -1,0 +1,172 @@
+/* Header Banner */
+.moon-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(90deg, #0b2354, #1f54a2, #17a7e8);
+  color: white;
+  padding: 12px 16px; /* slightly bigger for more presence */
+  border-radius: 8px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  min-height: 60px; /* taller banner */
+}
+
+.moon-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px; /* pushed version further right */
+}
+
+.moon-title h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.version {
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.25);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.moon-links {
+  display: flex;
+  gap: 10px;
+}
+
+.icon-btn {
+  background: #17a7e8; /* main color */
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.icon-btn img {
+  width: 16px;
+  height: 16px;
+  filter: brightness(0) invert(1); 
+}
+
+
+
+.icon-btn:hover {
+  background:  #17a7e8;
+}
+
+.icon-btn:hover img {
+  filter: none;
+}
+
+/* Reset basic styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Popup body */
+body {
+  width: 300px;
+  padding: 20px;
+  background-color: #ffffff; /* white background */
+  color: #015475;
+}
+
+/* Container layout */
+.extBody {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+/* Left and Right containers */
+.leftContainer, .rightContainer {
+  display: flex;
+  flex-direction: column;
+  width: 45%;
+}
+
+/* Labels */
+label {
+  font-weight: 600;
+  margin-bottom: 5px;
+  font-size: 14px;
+}
+
+/* Input field */
+input[type="text"] {
+  padding: 8px;
+  border: 1px solid #015475;
+  border-radius: 5px;
+  font-size: 14px;
+  outline: none;
+  transition: 0.3s border-color;
+}
+
+input[type="text"]:focus {
+  border-color: #0288a9;
+  box-shadow: 0 0 5px rgba(1,84,117,0.5);
+}
+
+/* Dropdown */
+select {
+  padding: 8px;
+  border: 1px solid #015475;
+  border-radius: 5px;
+  font-size: 14px;
+  background-color: white;
+  color: #015475;
+  outline: none;
+  transition: 0.3s border-color;
+}
+
+select:focus {
+  border-color: #0288a9;
+  box-shadow: 0 0 5px rgba(1,84,117,0.5);
+}
+
+/* Submit button */
+button.append-button {
+  width: 100%;
+  padding: 10px;
+  background-color: #17a7e8; /* main blue */
+  color: white;
+  font-weight: 600;
+  font-size: 15px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.3s background-color, 0.3s transform;
+}
+
+button.append-button:hover {
+  background-color: #1f54a2; /* darker blue on hover */
+  transform: translateY(-1px);
+}
+
+button.append-button:active {
+  background-color: #0b2354; /* darkest blue when clicked */
+  transform: translateY(0);
+}
+
+/* Responsive */
+@media screen and (max-width: 350px) {
+  .extBody {
+    flex-direction: column;
+  }
+
+  .leftContainer, .rightContainer {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+}

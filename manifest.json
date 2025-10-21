@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Moonfill",
+  "version": "1.2",
+  "description": "Moonfill automates and speeds up the completion of the Moonpull form. Just enter your MID and region, and Moonfill takes care of the rest effortlessly.",
+  "permissions": ["tabs", "storage", "activeTab", "scripting"],
+ "host_permissions": ["https://forms.office.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "assets/moonfill.png"
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
+
