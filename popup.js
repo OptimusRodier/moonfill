@@ -50,6 +50,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("githubBtn").addEventListener("click", () => {
-    chrome.tabs.create({ url: "https://github.com" });
+    chrome.tabs.create({ url: "https://github.com/OptimusRodier/moonfill" });
   });
 });
