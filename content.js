@@ -91,3 +91,16 @@ chrome.runtime.onMessage.addListener((msg) => {
     fillForm(msg.advertiserID, msg.geo);
   }
 });
+// 🌙 Inject Moonfill button with popup-style design (no logic changes)
+(function injectMoonfillButton() {
+  const target = document.querySelector("div.slds-card__body, div.slds-page-header__col-title"); 
+  if (!target || document.querySelector(".moonfill-btn")) return;
+
+  const moonfillButton = document.createElement("button");
+  moonfillButton.innerText = "🌙 Moonfill";
+  moonfillButton.className = "moonfill-btn";
+
+  // Append neatly within Salesforce header
+  target.appendChild(moonfillButton);
+  console.log("🌙 Moonfill styled button added.");
+})();

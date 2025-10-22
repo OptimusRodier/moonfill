@@ -2,6 +2,11 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Moonfill extension installed");
 });
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "openForm" && msg.url) {
+    chrome.tabs.create({ url: msg.url, active: true });
+  }
+});
 
 chrome.runtime.onMessage.addListener((message, sender) => {
   console.log("background: received message:", message, "from sender:", sender);
