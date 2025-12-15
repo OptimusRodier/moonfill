@@ -1,29 +1,59 @@
 console.log("Moonfill content script loaded");
+// === Robust helpers (best of both) ===
+function findQuestionByTitleContains(phrase) {
+  const items = document.querySelectorAll('div[data-automation-id="questionItem"]');
+  for (const item of items) {
+    const titleEl = item.querySelector('span[data-automation-id="questionTitle"] .text-format-content');
+    if (titleEl && titleEl.textContent.toLowerCase().includes(phrase.toLowerCase())) {
+      return item;
+    }
+  }
+  return null;
+}
 
-// Wait until all fields exist before filling
-function waitForFormFields(callback, retries = 15) {
-  const field1 = document.querySelector(
-    'input[placeholder="Enter your answer"][aria-labelledby*="QuestionId_rfa0990fbab3047cf9332a0fe6ab0d384"]'
+function getTextInputByTitle(phrase) {
+  const item = findQuestionByTitleContains(phrase);
+  return item ? item.querySelector('input[data-automation-id="textInput"]') : null;
+}
+
+function getRadioByTitleAndOption(titlePhrase, optionText) {
+  const item = findQuestionByTitleContains(titlePhrase);
+  if (!item) return null;
+  const options = item.querySelectorAll('div[data-automation-id="likerOption"]');
+  for (const opt of options) {
+    const label = opt.querySelector('span.text-format-content');
+    if (label && label.textContent.trim().toLowerCase() === optionText.toLowerCase()) {
+      return opt.querySelector('input[type="radio"]');
+    }
+  }
+  return null;
+}
+
+function waitForFormFields(callback, retries = 25) {
+  const field1 = getTextInputByTitle("Affiliate Link");
+  const field2 = getTextInputByTitle("advertiser ID");
+  const field3 = getTextInputByTitle("geo location");
+
+  const radio = getRadioByTitleAndOption(
+    "How do you want to receive the results",
+    "Teams"
   );
-  const field2 = document.querySelector(
-    'input[placeholder="The value must be a number"]'
+
+  const submitBtn = document.querySelector(
+    'button[data-automation-id="submitButton"]'
   );
-  const field3 = document.querySelector(
-    'div[data-automation-id="questionItem"] input[placeholder="Enter your answer"][aria-labelledby*="QuestionId_r93fa680d81f94246bdda649f70958604"]'
-  );
-  const radio = document.querySelector('input[aria-label="Teams"][type="radio"]');
-  const submitBtn = document.querySelector('button[data-automation-id="submitButton"]');
 
   if (field1 && field2 && field3 && radio && submitBtn) {
-    console.log("✅ All form fields detected");
+    console.log("✅ All fields detected (final robust mapping)");
     callback(field1, field2, field3, radio, submitBtn);
   } else if (retries > 0) {
-    console.log(`⏳ Waiting for form fields... (${retries} retries left)`);
-    setTimeout(() => waitForFormFields(callback, retries - 1), 1000); // 1s intervals = ~15s total
+    console.log(`⏳ Waiting... (${retries} left)`);
+    setTimeout(() => waitForFormFields(callback, retries - 1), 1000);
   } else {
-    console.warn("⚠️ Form fields not found after waiting 15 seconds.");
+    console.warn("❌ Fields not found");
   }
 }
+
 
 function fillForm(advertiserID, geo) {
   console.log("Filling form with:", advertiserID, geo);
@@ -43,8 +73,8 @@ function fillForm(advertiserID, geo) {
 
       // Check the radio
       radio.click();
-      radio.checked = true;
       radio.dispatchEvent(new Event("change", { bubbles: true }));
+
 
       console.log("✅ Fields and radio filled. Waiting before submitting...");
 
