@@ -1,86 +1,96 @@
-// background.js - robust close-tab handler
+// background.js - one-click flow: creates the form tab, remembers where the
+// user came from, and returns focus there automatically once the tab closes.
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Moonfill extension installed");
 });
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.action === "openForm" && msg.url) {
-    chrome.tabs.create({ url: msg.url, active: true });
+
+// --- Remember which tab to return to once a given form tab finishes ---
+async function rememberOrigin(formTabId, originTabId) {
+  if (!formTabId || !originTabId) return;
+  await chrome.storage.session.set({ [`moonfillOrigin_${formTabId}`]: originTabId });
+}
+
+async function recallAndClearOrigin(formTabId) {
+  const key = `moonfillOrigin_${formTabId}`;
+  const data = await chrome.storage.session.get(key);
+  await chrome.storage.session.remove(key);
+  return data[key];
+}
+
+// --- Kick off the whole flow (called from the popup) ---
+// Lives entirely in the background so it keeps running even after the popup
+// closes (which happens the instant focus moves to the new tab).
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg && msg.action === "startMoonfill" && msg.url) {
+    (async () => {
+      // Plan A: storage, read by content.js as soon as it loads
+      await chrome.storage.local.set({ advertiserID: msg.advertiserID, geo: msg.geo });
+      // The tab must be focused for Microsoft Forms to render its fields —
+      // Chrome throttles rendering in background tabs.
+      const tab = await chrome.tabs.create({ url: msg.url, active: true });
+      await rememberOrigin(tab.id, msg.originTabId);
+    })();
+    return;
+  }
+
+  // --- Kick off the flow from the Salesforce injected button ---
+  if (msg && msg.action === "openForm" && msg.url) {
+    (async () => {
+      const tab = await chrome.tabs.create({ url: msg.url, active: true });
+      const originTabId = sender && sender.tab ? sender.tab.id : null;
+      await rememberOrigin(tab.id, originTabId);
+    })();
+    return;
   }
 });
 
+// --- Close the form tab once it's done, and return the user to where they were ---
 chrome.runtime.onMessage.addListener((message, sender) => {
-  console.log("background: received message:", message, "from sender:", sender);
+  if (!message || message.action !== "closeTab") return;
 
-  if (message && message.action === "closeTab") {
-    // 1) If sender.tab is provided, close it
-    if (sender && sender.tab && sender.tab.id) {
-      const id = sender.tab.id;
-      console.log("background: closing sender.tab.id =", id);
-      chrome.tabs.remove(id, () => {
-        if (chrome.runtime.lastError) {
-          console.warn("background: chrome.tabs.remove error:", chrome.runtime.lastError.message);
-        } else {
-          console.log("background: tab closed (sender.tab).");
-        }
-      });
-      return; // done
-    }
+  const formTabId = (sender && sender.tab && sender.tab.id) || message.tabId;
 
-    // 2) If message includes a tabId, use it
-    if (message.tabId) {
-      console.log("background: closing message.tabId =", message.tabId);
-      chrome.tabs.remove(message.tabId, () => {
-        if (chrome.runtime.lastError) {
-          console.warn("background: chrome.tabs.remove error:", chrome.runtime.lastError.message);
-        } else {
-          console.log("background: tab closed (message.tabId).");
-        }
-      });
+  const finishAndClose = async (tabId) => {
+    if (!tabId) {
+      console.warn("background: no tab id to close.");
       return;
     }
-
-    // 3) Fallback: try to find an open forms.office.com tab in the last focused window
-    chrome.tabs.query({ lastFocusedWindow: true }, (tabs) => {
-      if (chrome.runtime.lastError) {
-        console.warn("background: tabs.query error:", chrome.runtime.lastError.message);
-        return;
-      }
-
-      // Prefer active tab in last focused window
-      const active = tabs.find(t => t.active && t.id);
-      if (active && active.url && active.url.includes("forms.office.com")) {
-        console.log("background: closing active forms.office.com tab:", active.id, active.url);
-        chrome.tabs.remove(active.id, () => {
-          if (chrome.runtime.lastError) {
-            console.warn("background: chrome.tabs.remove error:", chrome.runtime.lastError.message);
-          } else {
-            console.log("background: tab closed (active forms tab).");
+    try {
+      const originTabId = await recallAndClearOrigin(tabId);
+      if (originTabId) {
+        try {
+          const originTab = await chrome.tabs.get(originTabId);
+          await chrome.tabs.update(originTabId, { active: true });
+          if (originTab && originTab.windowId != null) {
+            await chrome.windows.update(originTab.windowId, { focused: true });
           }
-        });
-        return;
-      }
-
-      // Otherwise find any tab whose URL contains forms.office.com
-      chrome.tabs.query({ url: "*://forms.office.com/*" }, (formTabs) => {
-        if (chrome.runtime.lastError) {
-          console.warn("background: tabs.query(forms) error:", chrome.runtime.lastError.message);
-          return;
+          console.log("background: refocused origin tab", originTabId);
+        } catch (e) {
+          console.warn("background: origin tab gone, skipping refocus:", e.message);
         }
-        if (formTabs && formTabs.length > 0) {
-          // prefer the lastFocusedWindow match if possible
-          const candidate = formTabs[0];
-          console.log("background: closing first forms.office.com tab found:", candidate.id, candidate.url);
-          chrome.tabs.remove(candidate.id, () => {
-            if (chrome.runtime.lastError) {
-              console.warn("background: chrome.tabs.remove error:", chrome.runtime.lastError.message);
-            } else {
-              console.log("background: tab closed (forms.office.com candidate).");
-            }
-          });
+      }
+    } finally {
+      chrome.tabs.remove(tabId, () => {
+        if (chrome.runtime.lastError) {
+          console.warn("background: chrome.tabs.remove error:", chrome.runtime.lastError.message);
         } else {
-          console.warn("background: no forms.office.com tab found to close.");
+          console.log("background: tab closed.");
         }
       });
-    });
+    }
+  };
+
+  if (formTabId) {
+    finishAndClose(formTabId);
+    return;
   }
+
+  // Fallback: no tab id available at all — locate an open forms tab
+  chrome.tabs.query({ url: ["*://forms.office.com/*", "*://forms.cloud.microsoft/*"] }, (formTabs) => {
+    if (formTabs && formTabs.length > 0) {
+      finishAndClose(formTabs[0].id);
+    } else {
+      console.warn("background: no forms tab found to close.");
+    }
+  });
 });
