@@ -139,7 +139,7 @@ function fillForm(advertiserID, geo) {
 
   waitForFormFields((field1, field2, field3, radio, submitBtn) => {
     try {
-      field1.value = `https://www.awin1.com/cread.php?awinmid=${advertiserID}&id=45628`;
+      field1.value = `https://www.awin1.com/cread.php?awinmid=${advertiserID}&id=111`;
       field2.value = advertiserID;
       field3.value = geo;
 
