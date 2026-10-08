@@ -17,6 +17,36 @@ async function recallAndClearOrigin(formTabId) {
   return data[key];
 }
 
+// --- "Armed" flag: the form is only auto-filled when Moonfill itself opened it ---
+async function armMoonfill() {
+  await chrome.storage.session.set({ moonfillArmed: { at: Date.now() } });
+}
+
+// content.js asks this on every load of the form page. It answers yes only
+// for the tab Moonfill just opened (within 60s), so opening the form
+// manually, from a bookmark or a link, is left alone.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.action !== "moonfillShouldFill") return;
+  (async () => {
+    const { moonfillArmed } = await chrome.storage.session.get("moonfillArmed");
+    const tabId = sender && sender.tab ? sender.tab.id : null;
+    let ok = false;
+    if (moonfillArmed && tabId && Date.now() - moonfillArmed.at < 60000) {
+      if (!moonfillArmed.tabId) {
+        // first load: bind the flag to this tab
+        moonfillArmed.tabId = tabId;
+        await chrome.storage.session.set({ moonfillArmed });
+        ok = true;
+      } else {
+        // later loads (e.g. redirect between form domains): same tab only
+        ok = moonfillArmed.tabId === tabId;
+      }
+    }
+    sendResponse({ fill: ok });
+  })();
+  return true; // keep the channel open for the async response
+});
+
 // --- Kick off the whole flow (called from the popup) ---
 // Lives entirely in the background so it keeps running even after the popup
 // closes (which happens the instant focus moves to the new tab).
@@ -25,6 +55,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     (async () => {
       // Plan A: storage, read by content.js as soon as it loads
       await chrome.storage.local.set({ advertiserID: msg.advertiserID, geo: msg.geo });
+      await armMoonfill();
       // The tab must be focused for Microsoft Forms to render its fields —
       // Chrome throttles rendering in background tabs.
       const tab = await chrome.tabs.create({ url: msg.url, active: true });
@@ -36,6 +67,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   // --- Kick off the flow from the Salesforce injected button ---
   if (msg && msg.action === "openForm" && msg.url) {
     (async () => {
+      await armMoonfill();
       const tab = await chrome.tabs.create({ url: msg.url, active: true });
       const originTabId = sender && sender.tab ? sender.tab.id : null;
       await rememberOrigin(tab.id, originTabId);
