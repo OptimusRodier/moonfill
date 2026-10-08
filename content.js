@@ -177,22 +177,26 @@ function fillForm(advertiserID, geo) {
   });
 }
 
-// Plan A: retrieve from storage
-chrome.storage.local.get(["advertiserID", "geo"], ({ advertiserID, geo }) => {
-  if (advertiserID && geo) {
-    console.log("Retrieved from storage:", advertiserID, geo);
-    fillForm(advertiserID, geo);
-  } else {
-    console.log("Storage empty, waiting for Plan B message...");
+// Only auto-fill when Moonfill itself opened this tab. background.js answers
+// yes for the tab it just created (within 60s) and no for anything else, so
+// opening the form manually, from a bookmark or a link, leaves it untouched.
+chrome.runtime.sendMessage({ action: "moonfillShouldFill" }, (res) => {
+  if (chrome.runtime.lastError) {
+    console.warn("Moonfill: could not reach background:", chrome.runtime.lastError.message);
+    return;
   }
-});
-
-// Plan B: message from popup
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.advertiserID && msg.geo) {
-    console.log("Received from message:", msg.advertiserID, msg.geo);
-    fillForm(msg.advertiserID, msg.geo);
+  if (!res || !res.fill) {
+    console.log("Not a Moonfill run, leaving the form alone");
+    return;
   }
+  chrome.storage.local.get(["advertiserID", "geo"], ({ advertiserID, geo }) => {
+    if (advertiserID && geo) {
+      console.log("Retrieved from storage:", advertiserID, geo);
+      fillForm(advertiserID, geo);
+    } else {
+      console.log("Moonfill run, but storage is empty.");
+    }
+  });
 });
 
 // 🌙 Inject Moonfill button with popup-style design (Salesforce page)
