@@ -63,7 +63,7 @@ function injectButton(cardBody, mid) {
 
   if (mid && mid.length >=3) {
     button.addEventListener("click", () => {
-      const url = "https://forms.office.com/pages/responsepage.aspx?id=07KaWlh7JUWYUdFycma616fCV2xjqwdEqzYTwuOkzBJUMU5JTTM1MTdVTVY5OVNKTk1TREtLU0wxUS4u&lang=en";
+      const url = "https://forms.cloud.microsoft/pages/responsepage.aspx?id=07KaWlh7JUWYUdFycma616fCV2xjqwdEqzYTwuOkzBJUMU5JTTM1MTdVTVY5OVNKTk1TREtLU0wxUS4u&lang=en";
       chrome.runtime.sendMessage({ action: "openForm", url });
     });
   }

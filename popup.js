@@ -18,33 +18,27 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Save values to Chrome storage (Plan A)
-    chrome.storage.local.set({ advertiserID, geo }, () => {
-      console.log("Saved advertiserID and geo to storage:", advertiserID, geo);
-    });
-
     const officeFormURL =
-      "https://forms.office.com/pages/responsepage.aspx?id=07KaWlh7JUWYUdFycma616fCV2xjqwdEqzYTwuOkzBJUMU5JTTM1MTdVTVY5OVNKTk1TREtLU0wxUS4u&lang=en";
+      "https://forms.cloud.microsoft/pages/responsepage.aspx?id=07KaWlh7JUWYUdFycma616fCV2xjqwdEqzYTwuOkzBJUMU5JTTM1MTdVTVY5OVNKTk1TREtLU0wxUS4u&lang=en";
 
-    // Open the Office form (active tab)
-    chrome.tabs.create({ url: officeFormURL, active: true }, (tab) => {
-      console.log("Office form opened:", officeFormURL);
+    // Note which tab the user was on, so the background script can return
+    // them to it once the form is filled, submitted, and closed.
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const originTabId = tabs && tabs[0] ? tabs[0].id : null;
 
-      // Plan B — send message once the page fully loads
-      chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-        if (tabId === tab.id && info.status === "complete") {
-          chrome.tabs.onUpdated.removeListener(listener);
-
-          // Send advertiserID and geo to the content script
-          chrome.tabs.sendMessage(tab.id, { advertiserID, geo }, () => {
-            console.log("Sent advertiserID + geo via Plan B:", advertiserID, geo);
-          });
-        }
+      // Hand everything off to background.js — it keeps running even after
+      // this popup closes (which happens the moment focus leaves it), so
+      // one click is all that's needed; you don't have to stay on the page.
+      chrome.runtime.sendMessage({
+        action: "startMoonfill",
+        advertiserID,
+        geo,
+        url: officeFormURL,
+        originTabId,
       });
     });
   });
 
-  // 🔹 Add these two buttons
   document.getElementById("portfolioBtn").addEventListener("click", () => {
     chrome.tabs.create({ url: "https://rodiersangibala.chezyo.com/" });
   });
