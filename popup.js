@@ -31,11 +31,28 @@ function row(label, value, valueClass) {
   return div;
 }
 
+let copied = { id: null, until: 0 };
+
 function card(job, now) {
   const st = statusOf(job, now);
   const el = document.createElement("div");
   el.className = "job " + st.cls;
   el.append(row("Program:", job.program || "—"), row("MID:", job.mid), row("Status:", st.text, "status"));
+  if (job.state === "failed" && job.resultText) {
+    const c = document.createElement("button");
+    c.className = "copy";
+    c.textContent = copied.id === job.id && now < copied.until ? "Copied ✓" : "Copy result";
+    c.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(job.resultText);
+        copied = { id: job.id, until: Date.now() + 3000 };
+      } catch (e) {
+        c.textContent = "Copy failed";
+      }
+      render();
+    });
+    el.appendChild(c);
+  }
   if (job.state === "failed") {
     const x = document.createElement("button");
     x.className = "dismiss";

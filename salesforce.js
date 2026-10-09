@@ -182,40 +182,48 @@ function insertText(editor, text) {
 async function postToChatter(text, recordId, share) {
   if (getRecordIdFromUrl() !== recordId) return fail("the page is not on the expected record", false);
 
-  const findEditor = () => {
-    const e = document.querySelector(".forceChatterMessageBodyInputRichTextEditor .ql-editor");
-    return e && isVisible(e) ? e : null;
-  };
+  // Lightning keeps previously opened record pages in the DOM, hidden. A plain
+  // document.querySelector can return the Chatter tab of one of those hidden
+  // pages (it did on Hempea Global), so every lookup is scoped to the page that
+  // is active now, and only visible elements count.
+  const root = () => document.querySelector(".oneContent.active") || document;
+  const firstVisible = (sel) => Array.from(root().querySelectorAll(sel)).find(isVisible) || null;
+
+  const findChatterTab = () => firstVisible('a[data-tab-value="collaborateTab"]');
+  const findEditor = () => firstVisible(".forceChatterMessageBodyInputRichTextEditor .ql-editor");
   const findPlaceholder = () =>
-    Array.from(document.querySelectorAll("span.bBody")).find(
-      (s) => s.textContent.trim() === "Share an update..." && isVisible(s)
-    );
+    Array.from(root().querySelectorAll("span.bBody")).find(
+      (el) => el.textContent.trim() === "Share an update..." && isVisible(el)
+    ) || null;
+  const findShare = () =>
+    firstVisible("button.cuf-publisherShareButton.qe-textPostDesktop:not([disabled])");
 
   // 1. Open the Chatter tab if the box isn't showing yet
   let editor = findEditor();
   let placeholder = editor ? null : findPlaceholder();
   if (!editor && !placeholder) {
-    const tab = await waitFor(() => document.querySelector('a[data-tab-value="collaborateTab"]'), 30000);
-    if (tab && tab.getAttribute("aria-selected") !== "true") realClick(tab);
+    const tab = await waitFor(findChatterTab, 30000);
+    if (!tab) return fail("Chatter tab not found on this record");
+    if (tab.getAttribute("aria-selected") !== "true") realClick(tab);
     await waitFor(() => (editor = findEditor()) || (placeholder = findPlaceholder()), 20000);
+    if (!editor && !placeholder) {
+      return fail('Chatter tab opened but the "Share an update..." box did not appear');
+    }
   }
 
   // 2. Click "Share an update..." to expand the editor
-  if (!editor && placeholder) {
-    realClick(placeholder);
+  if (!editor) {
+    realClick(placeholder.closest("button") || placeholder);
     editor = await waitFor(findEditor, 10000);
+    if (!editor) return fail('clicked "Share an update..." but the editor did not open');
   }
-  if (!editor) return fail("Chatter box not found");
   await sleep(500);
 
   // 3. Paste the result
-  if (!insertText(editor, text)) return fail("could not insert the text");
+  if (!insertText(editor, text)) return fail("could not insert the text into the editor");
 
   // 4. Click Share once it becomes enabled
-  const shareBtn = await waitFor(() => {
-    const b = document.querySelector("button.cuf-publisherShareButton.qe-textPostDesktop:not([disabled])");
-    return b && isVisible(b) ? b : null;
-  }, 8000);
+  const shareBtn = await waitFor(findShare, 8000);
   if (!shareBtn) return fail("the Share button stayed disabled");
   if (!share) return { ok: true, note: "text inserted, not shared" };
 

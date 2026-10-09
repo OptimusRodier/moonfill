@@ -61,6 +61,7 @@ async function finishJob(job, state, error, note) {
   job.finishedAt = Date.now();
   job.error = error || null;
   job.note = note || null;
+  if (state === "done") delete job.resultText;
   await saveJob(job);
   chrome.alarms.create("moonfillPrune", { delayInMinutes: 11 });
   if (state === "failed") {
@@ -256,8 +257,16 @@ async function processJob(job) {
   await saveJob(job);
   await refreshBadge();
   const res = await postResultToRecord(job, text);
-  if (res.ok) await finishJob(job, "done", null, res.note);
-  else await finishJob(job, "failed", `could not post to Chatter (${res.error})`);
+  if (res.ok) {
+    await finishJob(job, "done", null, res.note);
+    notify(
+      "Moonfill: result pasted",
+      `${job.program || "MID " + job.mid}: ` + (res.note ? "text pasted, click Share to post it." : "posted to Chatter.")
+    );
+  } else {
+    job.resultText = text; // so the popup can offer "Copy result"
+    await finishJob(job, "failed", res.error);
+  }
 }
 
 // ---------- post to the record's Chatter feed ----------
@@ -294,7 +303,7 @@ async function postResultToRecord(job, text) {
   }
   try {
     let res = await sendPost(tab.id, job, text);
-    if (!res.ok && res.retry && opened) {
+    if (!res.ok && res.retry) {
       // Lightning may not render in a background tab: bring it forward and retry once
       const [prev] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
       previousActive = prev && prev.id !== tab.id ? prev.id : null;
