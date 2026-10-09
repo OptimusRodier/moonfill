@@ -42,9 +42,9 @@ The **History** button lists your latest scans with program, MID and status.
 
 ## What you need
 
-- **Microsoft Edge or Google Chrome** on a computer.
-- To be **signed in to Salesforce and Microsoft 365** in that same browser.
-- **Access to the shared Moonpull results folder.** This is where the scan result is saved. Ask your team lead if you can't open it.
+- **Microsoft Edge or Google Chrome** installed on your computer.
+- To be **signed in to both Salesforce and Microsoft 365** in the same browser.
+- **Access to the shared Moonpull results folder.** Please contact Rodier or Thomas on Teams to request access to the Moonpull batch results folder. This is where the scan results are saved. 
 
 ---
 
