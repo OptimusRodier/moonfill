@@ -2,22 +2,27 @@
 // One scan = one job, visible in the popup from the click until it is pasted.
 // Each form tab carries its own MID/geo/record, the Forms response ID read on
 // submit links the job to its result file, and the finished result is posted
-// to the record's Chatter feed.
+// to the record's Chatter feed. If the browser window is hidden when the result
+// arrives, the job waits ("waiting_browser") instead of failing, and posts as
+// soon as a browser window is in front. "Force paste" does it on demand.
 
 // Folder where the flow saves "<ResponseId>.txt" (must end with "/")
 const RESULT_FOLDER_URL =
   "https://zanox.sharepoint.com/teams/Global-MoonpullI-Integration/Shared%20Documents/General/batch%20results%20use%20cases/Integartion%20Tests/Moonpull%20Integration%20dataCenter/";
 
-const POLL_MS = 5000;                    // check every 5 seconds
-const JOB_TIMEOUT_MS = 20 * 60 * 1000;   // give up 20 minutes after the form was submitted
-const AUTO_SHARE = true;                 // false = paste into Chatter but don't click Share (tab stays open for review)
-const ACTIVE = ["submitting", "waiting", "posting"];
-const DONE_KEEP_MS = 2 * 60 * 1000;      // finished jobs are cleaned up after 2 min (popup hides them after 1)
-const FAILED_KEEP_MS = 10 * 60 * 1000;   // failed jobs stay visible for 10 min
+const POLL_MS = 5000;                      // check every 5 seconds
+const JOB_TIMEOUT_MS = 20 * 60 * 1000;     // give up 20 minutes after the form was submitted
+const PARKED_TIMEOUT_MS = 8 * 60 * 60 * 1000; // a waiting result is kept for 8 hours
+const PARK_RETRY_MS = 15000;               // retry a waiting result every 15 s while a browser window is focused
+const AUTO_SHARE = true;                   // false = paste into Chatter but don't click Share (tab stays open for review)
+const ACTIVE = ["submitting", "waiting", "posting", "waiting_browser"];
+const HISTORY_MAX = 50;                    // finished jobs kept for the History view
+const FAILED_BADGE_MS = 10 * 60 * 1000;    // "!" on the icon for 10 minutes after a failure
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const tabKey = (tabId) => `moonfillTab_${tabId}`;
 const jobKey = (id) => `moonfillJob_${id}`;
+const label = (job) => job.program || `MID ${job.mid}`;
 
 chrome.runtime.onInstalled.addListener(() => console.log("Moonfill extension installed"));
 chrome.runtime.onStartup.addListener(() => ensurePolling());
@@ -27,6 +32,22 @@ function notify(title, message) {
     { type: "basic", iconUrl: "assets/icon128.png", title, message },
     () => void chrome.runtime.lastError
   );
+}
+
+// ---------- result text: drop the requester's name and job title ----------
+// The flow writes "Your ... scan is complete for:" followed by the requester's
+// name and title. Neither is needed in the Chatter post.
+function cleanResult(text) {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/^(.*scan is complete)[ \t]*for:[ \t]*\n[\s\S]*?\n(?=\s*Input:)/im, "$1\n");
+}
+
+// ---------- first line of every post: "Pasted via Moonfill v<version>" ----------
+// The version is read from manifest.json, so bumping it there updates every post.
+function withPromo(text) {
+  if (/^\s*Pasted via Moonfill/i.test(text)) return text; // never twice
+  return `Pasted via Moonfill v${chrome.runtime.getManifest().version}\n${text}`;
 }
 
 // ---------- job storage (one key per job, so jobs never overwrite each other) ----------
@@ -40,19 +61,18 @@ const removeJob = (id) => chrome.storage.local.remove(jobKey(id));
 async function refreshBadge() {
   const jobs = await getJobs();
   const n = jobs.filter((j) => ACTIVE.includes(j.state)).length;
-  const failed = jobs.some((j) => j.state === "failed");
+  const parked = jobs.some((j) => j.state === "waiting_browser");
+  const failed = jobs.some((j) => j.state === "failed" && Date.now() - j.finishedAt < FAILED_BADGE_MS);
   chrome.action.setBadgeText({ text: n ? String(n) : failed ? "!" : "" });
-  chrome.action.setBadgeBackgroundColor({ color: n ? "#015475" : "#bc2f32" });
+  chrome.action.setBadgeBackgroundColor({ color: parked ? "#d97706" : n ? "#015475" : "#bc2f32" });
 }
 
+// Keep the newest HISTORY_MAX finished jobs for the History view
 async function pruneFinished() {
-  const now = Date.now();
-  for (const j of await getJobs()) {
-    const age = j.finishedAt ? now - j.finishedAt : 0;
-    if ((j.state === "done" && age > DONE_KEEP_MS) || (j.state === "failed" && age > FAILED_KEEP_MS)) {
-      await removeJob(j.id);
-    }
-  }
+  const finished = (await getJobs())
+    .filter((j) => j.finishedAt)
+    .sort((a, b) => b.finishedAt - a.finishedAt);
+  for (const j of finished.slice(HISTORY_MAX)) await removeJob(j.id);
   await refreshBadge();
 }
 
@@ -63,11 +83,15 @@ async function finishJob(job, state, error, note) {
   job.note = note || null;
   if (state === "done") delete job.resultText;
   await saveJob(job);
-  chrome.alarms.create("moonfillPrune", { delayInMinutes: 11 });
+  chrome.alarms.create("moonfillPrune", { delayInMinutes: 11 }); // clears the "!" badge later
   if (state === "failed") {
-    notify("Moonfill: scan failed", `${job.program || "MID " + job.mid}: ${error}. The result is still in Teams/email.`);
+    notify(
+      "Moonfill: scan failed",
+      `${label(job)}: ${error}. ` +
+        (job.resultText ? "Open Moonfill to Force paste or Copy the result." : "Check Teams/email for the result.")
+    );
   }
-  await refreshBadge();
+  await pruneFinished();
 }
 
 // ---------- start a scan: one form tab + one job ----------
@@ -171,14 +195,13 @@ async function ensurePolling() {
     let alarmSet = false;
     while (true) {
       await pruneFinished();
-      const jobs = await getJobs();
-      let active = jobs.filter((j) => ACTIVE.includes(j.state));
+      let active = (await getJobs()).filter((j) => ACTIVE.includes(j.state));
 
       // Stuck jobs
       for (const j of active) {
         if (j.state === "submitting" && Date.now() - j.startedAt > 3 * 60 * 1000) {
           await finishJob(j, "failed", "the form was not submitted");
-        } else if (j.state === "posting" && Date.now() - (j.postingAt || 0) > 3 * 60 * 1000) {
+        } else if (j.state === "posting" && Date.now() - (j.postingAt || 0) > 3 * 60 * 1000 && !busy.has(j.id)) {
           await finishJob(j, "failed", "posting was interrupted, check Chatter");
         }
       }
@@ -193,8 +216,11 @@ async function ensurePolling() {
         chrome.alarms.create("moonfillPoll", { periodInMinutes: 0.5 });
         alarmSet = true;
       }
-      for (const job of active.filter((j) => j.state === "waiting")) {
-        await processJob(job);
+      for (const job of active) {
+        const fresh = (await chrome.storage.local.get(jobKey(job.id)))[jobKey(job.id)];
+        if (!fresh || fresh.state !== job.state) continue; // changed meanwhile (e.g. Force paste)
+        if (job.state === "waiting") await processJob(job);
+        else if (job.state === "waiting_browser") await retryParked(job);
       }
       await sleep(POLL_MS);
     }
@@ -242,35 +268,91 @@ async function processJob(job) {
     await saveJob(job);
     return;
   }
-  const text = r.text;
-  if (!text.trim()) return;
+  if (!r.text.trim()) return;
 
   // Safety: the MID inside the result must be the MID we submitted
-  const m = /Advertiser ID:\s*(\d+)/i.exec(text);
+  const m = /Advertiser ID:\s*(\d+)/i.exec(r.text);
   if (m && m[1] !== String(job.mid)) {
     await finishJob(job, "failed", `result is for MID ${m[1]}, expected ${job.mid}. Nothing was posted`);
     return;
   }
 
-  job.state = "posting";
-  job.postingAt = Date.now();
-  await saveJob(job);
-  await refreshBadge();
-  const res = await postResultToRecord(job, text);
-  if (res.ok) {
-    await finishJob(job, "done", null, res.note);
-    notify(
-      "Moonfill: result pasted",
-      `${job.program || "MID " + job.mid}: ` + (res.note ? "text pasted, click Share to post it." : "posted to Chatter.")
-    );
-  } else {
-    job.resultText = text; // so the popup can offer "Copy result"
-    await finishJob(job, "failed", res.error);
+  await attemptPost(job, withPromo(cleanResult(r.text)), false);
+}
+
+// A waiting result is retried whenever a browser window is focused (so it is visible)
+async function browserFocused() {
+  const wins = await chrome.windows.getAll();
+  return wins.some((w) => w.focused);
+}
+
+async function retryParked(job) {
+  if (Date.now() - (job.parkedAt || 0) > PARKED_TIMEOUT_MS) {
+    await finishJob(job, "failed", "the browser was not brought to the front for 8 hours");
+    return;
+  }
+  if (Date.now() - (job.lastTry || 0) < PARK_RETRY_MS) return;
+  if (!(await browserFocused())) return;
+  await attemptPost(job, job.resultText, false);
+}
+
+// Posts once and moves the job to its next state: done, waiting_browser or failed
+const busy = new Set();
+async function attemptPost(job, text, forced) {
+  if (busy.has(job.id)) return;
+  busy.add(job.id);
+  try {
+    job.state = "posting";
+    job.postingAt = Date.now();
+    job.lastTry = Date.now();
+    await saveJob(job);
+    await refreshBadge();
+
+    const res = await postResultToRecord(job, text, forced);
+
+    if (res.ok) {
+      await finishJob(job, "done", null, res.note);
+      notify(
+        "Moonfill: result pasted",
+        `${label(job)}: ` + (res.note ? "text pasted, click Share to post it." : "posted to Chatter.")
+      );
+    } else if (res.hidden && res.retry && !forced) {
+      // The window is hidden, so Lightning won't draw the Chatter box. Not a failure: wait.
+      job.state = "waiting_browser";
+      job.resultText = text;
+      job.parkedAt = job.parkedAt || Date.now();
+      await saveJob(job);
+      await refreshBadge();
+      if (!job.notifiedParked) {
+        job.notifiedParked = true;
+        await saveJob(job);
+        notify("Moonfill: result ready", `${label(job)}: it will be pasted as soon as you bring the browser to the front.`);
+      }
+    } else {
+      job.resultText = text; // so the popup can offer Copy result / Force paste
+      await finishJob(job, "failed", res.error);
+    }
+  } finally {
+    busy.delete(job.id);
   }
 }
 
+// Force paste (from the popup): bring the record forward and post now
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.action !== "forcePost" || !msg.jobId) return;
+  (async () => {
+    const jk = jobKey(msg.jobId);
+    const job = (await chrome.storage.local.get(jk))[jk];
+    if (!job || !job.resultText || !["failed", "waiting_browser"].includes(job.state)) return;
+    job.error = null;
+    job.finishedAt = null;
+    ensurePolling();
+    await attemptPost(job, job.resultText, true);
+  })();
+});
+
 // ---------- post to the record's Chatter feed ----------
-async function sendPost(tabId, job, text) {
+async function sendPost(tabId, job, text, opts) {
   // A freshly opened tab needs a moment before its content script answers
   for (let i = 0; i < 40; i++) {
     try {
@@ -278,7 +360,9 @@ async function sendPost(tabId, job, text) {
         action: "moonfillPost",
         text,
         recordId: job.recordId,
-        share: AUTO_SHARE
+        share: AUTO_SHARE,
+        fast: !!opts.fast,
+        activated: !!opts.activated
       });
     } catch (e) {
       if (!/Receiving end does not exist|Could not establish connection/.test(e.message)) {
@@ -290,25 +374,37 @@ async function sendPost(tabId, job, text) {
   return { ok: false, retry: true, error: "Salesforce page did not respond" };
 }
 
-async function postResultToRecord(job, text) {
+async function postResultToRecord(job, text, forced) {
+  const [prev] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+
   // Reuse a tab that already shows this record, else open it in the background
   const origin = new URL(job.recordUrl).origin;
   const existing = await chrome.tabs.query({ url: `${origin}/lightning/r/TSE__c/${job.recordId}/*` });
   let tab = existing[0];
   let opened = false;
-  let previousActive = null;
   if (!tab) {
     tab = await chrome.tabs.create({ url: job.recordUrl, active: false });
     opened = true;
   }
+
+  let activated = false;
+  const bringForward = async () => {
+    await chrome.tabs.update(tab.id, { active: true });
+    if (forced) await chrome.windows.update(tab.windowId, { focused: true });
+    activated = true;
+  };
+
   try {
-    let res = await sendPost(tab.id, job, text);
+    if (forced) {
+      await bringForward();
+      return await sendPost(tab.id, job, text, { fast: false, activated: true });
+    }
+    // 1. quietly, in a background tab
+    let res = await sendPost(tab.id, job, text, { fast: true, activated: false });
+    // 2. make it the active tab of its window (no focus stolen) and try again
     if (!res.ok && res.retry) {
-      // Lightning may not render in a background tab: bring it forward and retry once
-      const [prev] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
-      previousActive = prev && prev.id !== tab.id ? prev.id : null;
-      await chrome.tabs.update(tab.id, { active: true });
-      res = await sendPost(tab.id, job, text);
+      await bringForward();
+      res = await sendPost(tab.id, job, text, { fast: true, activated: true });
     }
     return res;
   } finally {
@@ -320,8 +416,8 @@ async function postResultToRecord(job, text) {
         await chrome.tabs.update(tab.id, { active: true }); // leave it open for review
       }
     }
-    if (previousActive && AUTO_SHARE) {
-      try { await chrome.tabs.update(previousActive, { active: true }); } catch (e) { /* gone */ }
+    if (activated && AUTO_SHARE && prev && prev.id !== tab.id) {
+      try { await chrome.tabs.update(prev.id, { active: true }); } catch (e) { /* gone */ }
     }
   }
 }

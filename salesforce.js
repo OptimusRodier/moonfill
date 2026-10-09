@@ -155,7 +155,8 @@ async function processRecord() {
 // Errors flagged retry:true happened before anything was shared,
 // so background may safely try again; retry:false never repeats.
 // ============================================================
-const fail = (error, retry = true) => ({ ok: false, retry, error });
+// hidden = the page is not visible, which is why Lightning may not have drawn the Chatter box
+const fail = (error, retry = true) => ({ ok: false, retry, hidden: document.visibilityState !== "visible", error });
 
 // Replaces the editor content with the text (Quill picks up normal editing commands)
 function insertText(editor, text) {
@@ -179,8 +180,18 @@ function insertText(editor, text) {
   return !!editor.textContent.trim();
 }
 
-async function postToChatter(text, recordId, share) {
+async function postToChatter(text, recordId, share, opts = {}) {
   if (getRecordIdFromUrl() !== recordId) return fail("the page is not on the expected record", false);
+
+  // fast = quick attempts (background tab); otherwise be patient (Force paste)
+  const t = opts.fast ? { tab: 10000, box: 10000, editor: 8000 } : { tab: 30000, box: 20000, editor: 10000 };
+
+  // After the tab was brought forward: if the page is still not visible, the browser
+  // window itself is hidden (covered by another app or minimized). Report it at once.
+  if (opts.activated) {
+    await waitFor(() => document.visibilityState === "visible", 2000);
+    if (document.visibilityState !== "visible") return fail("the browser window is not visible");
+  }
 
   // Lightning keeps previously opened record pages in the DOM, hidden. A plain
   // document.querySelector can return the Chatter tab of one of those hidden
@@ -202,10 +213,10 @@ async function postToChatter(text, recordId, share) {
   let editor = findEditor();
   let placeholder = editor ? null : findPlaceholder();
   if (!editor && !placeholder) {
-    const tab = await waitFor(findChatterTab, 30000);
+    const tab = await waitFor(findChatterTab, t.tab);
     if (!tab) return fail("Chatter tab not found on this record");
     if (tab.getAttribute("aria-selected") !== "true") realClick(tab);
-    await waitFor(() => (editor = findEditor()) || (placeholder = findPlaceholder()), 20000);
+    await waitFor(() => (editor = findEditor()) || (placeholder = findPlaceholder()), t.box);
     if (!editor && !placeholder) {
       return fail('Chatter tab opened but the "Share an update..." box did not appear');
     }
@@ -214,7 +225,7 @@ async function postToChatter(text, recordId, share) {
   // 2. Click "Share an update..." to expand the editor
   if (!editor) {
     realClick(placeholder.closest("button") || placeholder);
-    editor = await waitFor(findEditor, 10000);
+    editor = await waitFor(findEditor, t.editor);
     if (!editor) return fail('clicked "Share an update..." but the editor did not open');
   }
   await sleep(500);
@@ -240,7 +251,7 @@ async function postToChatter(text, recordId, share) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.action !== "moonfillPost") return;
-  postToChatter(msg.text, msg.recordId, msg.share !== false)
+  postToChatter(msg.text, msg.recordId, msg.share !== false, { fast: !!msg.fast, activated: !!msg.activated })
     .then(sendResponse)
     .catch((e) => sendResponse(fail(String((e && e.message) || e), false)));
   return true; // async response

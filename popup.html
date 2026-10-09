@@ -6,23 +6,31 @@
 <title>Moonfill</title>
 <link rel="stylesheet" href="css/style.css">
 <style>
-  .scans { padding: 8px 12px; min-width: 320px; box-sizing: border-box; }
-  .scans h2 { font-size: 15px; margin: 6px 0 10px; }
+  .scans { padding: 8px 12px; min-width: 340px; box-sizing: border-box; }
+  .scans-head { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 10px; }
+  .scans-head h2 { font-size: 15px; margin: 0; }
+  .link-btn { border: 1px solid #015475; border-radius: 6px; background: #fff; color: #015475;
+              font-size: 12px; padding: 3px 10px; cursor: pointer; }
   .job { position: relative; background: #fff; color: #222; border-radius: 8px; padding: 8px 28px 8px 12px;
          margin-bottom: 8px; border-left: 4px solid #015475; font-size: 13px; line-height: 1.5;
          box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
   .job.ok { border-left-color: #2e844a; }
+  .job.warn { border-left-color: #d97706; }
   .job.bad { border-left-color: #bc2f32; }
   .job b { font-weight: 600; }
   .job .status { font-weight: 600; }
   .job.busy .status { color: #015475; }
   .job.ok .status { color: #2e844a; }
+  .job.warn .status { color: #b45309; }
   .job.bad .status { color: #bc2f32; }
+  .job .when { opacity: 0.7; }
   .job .dismiss { position: absolute; top: 4px; right: 6px; border: none; background: none;
                   font-size: 16px; cursor: pointer; color: #666; }
-  .job .copy { margin-top: 6px; padding: 3px 10px; border: 1px solid #015475; border-radius: 6px;
-               background: #fff; color: #015475; font-size: 12px; cursor: pointer; }
+  .job .act { margin: 6px 6px 0 0; padding: 3px 10px; border: 1px solid #015475; border-radius: 6px;
+              background: #fff; color: #015475; font-size: 12px; cursor: pointer; }
+  .job .act.primary { background: #015475; color: #fff; }
   .empty { font-size: 13px; opacity: 0.8; margin: 8px 0; }
+  #clearBtn { margin: 4px 0 8px; }
 </style>
 </head>
 <body>
@@ -34,11 +42,15 @@
     </div>
   </header>
 
-  <!-- Scans in progress -->
+  <!-- Scans in progress / history -->
   <div class="scans">
-    <h2>Moonpull scans</h2>
+    <div class="scans-head">
+      <h2 id="title">Moonpull scans</h2>
+      <button id="historyBtn" class="link-btn">History</button>
+    </div>
     <div id="jobs"></div>
-    <p id="empty" class="empty">No scans running. Click “🌙 Submit Moonpull form” on a Salesforce record.</p>
+    <p id="empty" class="empty"></p>
+    <button id="clearBtn" class="link-btn" style="display:none">Clear history</button>
   </div>
 
   <div class="moon-links">
