@@ -177,27 +177,26 @@ function fillForm(advertiserID, geo) {
   });
 }
 
-// Only auto-fill when Moonfill itself opened this tab. background.js answers
-// yes for the tab it just created (within 60s) and no for anything else, so
-// opening the form manually, from a bookmark or a link, leaves it untouched.
-chrome.runtime.sendMessage({ action: "moonfillShouldFill" }, (res) => {
-  if (chrome.runtime.lastError) {
-    console.warn("Moonfill: could not reach background:", chrome.runtime.lastError.message);
-    return;
-  }
-  if (!res || !res.fill) {
-    console.log("Not a Moonfill run, leaving the form alone");
-    return;
-  }
-  chrome.storage.local.get(["advertiserID", "geo"], ({ advertiserID, geo }) => {
-    if (advertiserID && geo) {
-      console.log("Retrieved from storage:", advertiserID, geo);
-      fillForm(advertiserID, geo);
-    } else {
-      console.log("Moonfill run, but storage is empty.");
+// Only auto-fill when Moonfill itself opened this tab. background.js holds the
+// job for this exact tab (MID + geo), so opening the form manually, from a
+// bookmark or a link, is left alone, and parallel scans can't mix up clients.
+function askBackground(attempt = 0) {
+  chrome.runtime.sendMessage({ action: "moonfillShouldFill" }, (res) => {
+    if (chrome.runtime.lastError) {
+      console.warn("Moonfill: could not reach background:", chrome.runtime.lastError.message);
+      return;
     }
+    if (res && res.fill && res.advertiserID && res.geo) {
+      console.log("Moonfill job for this tab:", res.advertiserID, res.geo);
+      fillForm(res.advertiserID, res.geo);
+      return;
+    }
+    // the job may be written a split second after the tab is created
+    if (attempt < 3) setTimeout(() => askBackground(attempt + 1), 700);
+    else console.log("Not a Moonfill run, leaving the form alone");
   });
-});
+}
+askBackground();
 
 // 🌙 Inject Moonfill button with popup-style design (Salesforce page)
 (function injectMoonfillButton() {

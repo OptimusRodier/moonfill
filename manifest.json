@@ -3,11 +3,12 @@
   "name": "Moonfill",
   "version": "1.4",
   "description": "Moonfill automates and speeds up the completion of the Moonpull form. Just enter your MID and region, and Moonfill takes care of the rest effortlessly.",
-  "permissions": ["tabs", "storage", "activeTab", "scripting"],
+  "permissions": ["tabs", "storage", "activeTab", "scripting", "webRequest", "alarms", "notifications"],
   "host_permissions": [
     "https://forms.office.com/*",
     "https://forms.cloud.microsoft/*",
-    "https://awin.lightning.force.com/*"
+    "https://awin.lightning.force.com/*",
+    "https://zanox.sharepoint.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
