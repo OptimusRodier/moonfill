@@ -158,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("portfolioBtn").addEventListener("click", () => {
-    chrome.tabs.create({ url: "https://rodiersangibala.chezyo.com/" });
+    chrome.tabs.create({ url: "https://rodier-portfolio-git-main-rodiers-projects.vercel.app/" });
   });
   document.getElementById("githubBtn").addEventListener("click", () => {
     chrome.tabs.create({ url: "https://github.com/OptimusRodier/moonfill" });
