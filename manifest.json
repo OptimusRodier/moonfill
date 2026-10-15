@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Moonfill",
-  "version": "1.4",
+  "version": "1.7",
   "description": "Moonfill automates and speeds up the completion of the Moonpull form. Just enter your MID and region, and Moonfill takes care of the rest effortlessly.",
   "permissions": ["tabs", "storage", "activeTab", "scripting", "webRequest", "alarms", "notifications"],
   "host_permissions": [
