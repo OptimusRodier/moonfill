@@ -10,8 +10,9 @@
 const RESULT_FOLDER_URL =
   "https://zanox.sharepoint.com/teams/Global-MoonpullI-Integration/Shared%20Documents/General/batch%20results%20use%20cases/Integartion%20Tests/Moonpull%20Integration%20dataCenter/";
 
-const POLL_MS = 5000;                      // check every 5 seconds
-const JOB_TIMEOUT_MS = 20 * 60 * 1000;     // give up 20 minutes after the form was submitted
+const POLL_MS = 2000;                      // check every 2 seconds
+const POLL_START_MS = 4 * 60 * 1000;       // the flow needs ~4:30-5:00, so don't look before 4:00
+const JOB_TIMEOUT_MS = 6.5 * 60 * 1000;    // result appears ~5:00 and is deleted ~30 s later, stop at 6:30
 const PARKED_TIMEOUT_MS = 8 * 60 * 60 * 1000; // a waiting result is kept for 8 hours
 const PARK_RETRY_MS = 15000;               // retry a waiting result every 15 s while a browser window is focused
 const AUTO_SHARE = true;                   // false = paste into Chatter but don't click Share (tab stays open for review)
@@ -235,25 +236,50 @@ chrome.alarms.onAlarm.addListener((a) => {
 ensurePolling(); // also runs whenever the worker wakes up
 
 // ---------- one job: fetch the file, check it, post it ----------
-async function readResultFile(responseId) {
+// Same folder, addressed through the SharePoint REST API (fallback if the plain file URL fails)
+const SP_SITE = "https://zanox.sharepoint.com/teams/Global-MoonpullI-Integration";
+const SP_FOLDER_PATH =
+  "/teams/Global-MoonpullI-Integration/Shared Documents/General/batch results use cases/Integartion Tests/Moonpull Integration dataCenter/";
+
+async function tryFetch(url) {
   try {
-    const url = RESULT_FOLDER_URL + encodeURIComponent(responseId) + ".txt";
-    const res = await fetch(url, { credentials: "include", cache: "no-store" });
+    const res = await fetch(url, { credentials: "include", cache: "no-store", headers: { Accept: "text/plain,*/*" } });
     if (res.status === 404) return { status: "notfound" };
-    if (!res.ok) return { status: "error", code: res.status };
+    if (!res.ok) return { status: "error", code: res.status, detail: `HTTP ${res.status}` };
     const text = await res.text();
-    if (/^\s*<(!doctype|html)/i.test(text)) return { status: "auth" }; // login page instead of the file
+    if (/^\s*<(!doctype|html)/i.test(text)) return { status: "auth", detail: "got a login/HTML page instead of the file" };
     return { status: "ok", text: text.replace(/^\uFEFF/, "") };
   } catch (e) {
-    return { status: "error", message: e.message };
+    // a redirect to login.microsoftonline.com ends up here as "Failed to fetch"
+    return { status: "error", message: e.message, detail: `network/redirect error (${e.message})` };
   }
+}
+
+async function readResultFile(responseId) {
+  const file = responseId + ".txt";
+  const direct = RESULT_FOLDER_URL + encodeURIComponent(file);
+  const rest =
+    SP_SITE + "/_api/web/GetFileByServerRelativePath(decodedurl='" +
+    encodeURIComponent(SP_FOLDER_PATH + file) + "')/$value";
+
+  let r = await tryFetch(direct);
+  if (r.status === "ok" || r.status === "notfound") return r;
+  const first = r.detail;
+  const r2 = await tryFetch(rest);
+  if (r2.status === "ok" || r2.status === "notfound") return r2;
+  r2.detail = `direct: ${first}; REST: ${r2.detail}`;
+  console.warn("Moonfill: could not read result file:", r2.detail);
+  return r2;
 }
 
 async function processJob(job) {
   if (Date.now() - (job.submittedAt || job.startedAt) > JOB_TIMEOUT_MS) {
-    await finishJob(job, "failed", "no result after 20 minutes");
+    await finishJob(job, "failed", "no result after 6.5 minutes");
     return;
   }
+
+  // too early: the flow has not had time to write the file yet
+  if (Date.now() - (job.submittedAt || job.startedAt) < POLL_START_MS) return;
 
   const r = await readResultFile(job.responseId);
   if (r.status === "notfound") {
@@ -263,7 +289,7 @@ async function processJob(job) {
   if (r.status !== "ok") {
     job.errors = (job.errors || 0) + 1;
     if (job.errors === 6) {
-      notify("Moonfill: can't read the result folder", "Sign in to Microsoft 365 in this browser. Still trying.");
+      notify("Moonfill: can't read the result folder", `${r.detail || "unknown error"}. Open the SharePoint site in a tab to refresh your session. Still trying.`);
     }
     await saveJob(job);
     return;
