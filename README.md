@@ -74,7 +74,7 @@ Moonfill is not in the browser store yet, so it is installed from the folder you
 
 1. **Start from the record.** Always click **🌙 Submit Moonpull form** on the Salesforce record of the program you want to scan.
 2. **Let the form finish.** Don't switch to another app during the first 25 seconds. The form needs to be on screen to fill itself in. When the tab closes, you are free.
-3. **Keep the browser open.** You can minimize it, but don't close it until the card says Complete. If you close it by mistake, reopen it within 20 minutes and Moonfill carries on.
+3. **Keep the browser open.** You can minimize it, but don't close it until the card says Complete. If you close it by mistake, reopen it within 6 minutes of submitting and Moonfill carries on.
 4. **Keep the browser visible when the result arrives, if you can.** If Edge or Chrome is hidden behind other windows, Salesforce can't draw its page, so the result waits. Leaving the browser visible on one of your screens avoids this. Otherwise it is posted as soon as you bring the browser to the front.
 5. **Stay signed in.** If your Salesforce or Microsoft 365 session expires, Moonfill can't read the result or open the record. Sign in again and use Force paste if needed.
 6. **Don't type in the Chatter box of that record** while its result is being posted.
@@ -89,7 +89,7 @@ Moonfill is not in the browser store yet, so it is installed from the folder you
 |---|---|
 | Result ready · waiting for the browser | Bring Edge or Chrome to the front. It posts by itself within a few seconds. Or click **Force paste**. |
 | Failed: Chatter tab not found / "Share an update..." box did not appear | Open the Moonfill icon and click **Force paste**. If it fails again, click **Copy result** and paste it into Chatter yourself. |
-| Failed: no result after 20 minutes | The scan may have taken longer or failed. Check the Teams message. |
+| Failed: no result after 6.5 minutes | The scan may have taken longer or failed. Check the Teams message. |
 | Failed: result is for another MID | Nothing was posted. Check the Teams message and tell the project owner. |
 | Can't read the result folder | Sign in to Microsoft 365 in this browser and check that you have access to the results folder. |
 | The form opens but doesn't fill in | Don't click again. Tell the project owner. The form may have changed. |
