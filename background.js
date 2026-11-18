@@ -1,3 +1,4 @@
+importScripts("detect-platform.js"); // platform detection (PlatformDetect)
 // background.js
 // One scan = one job, visible in the popup from the click until it is pasted.
 // Each form tab carries its own MID/geo/record, the Forms response ID read on
@@ -504,6 +505,13 @@ async function forcePost(jobId) {
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || msg.action !== "forcePost" || !msg.jobId) return;
   forcePost(msg.jobId);
+});
+
+// ---------- platform detection (asked by the Techfill orb when a record opens) ----------
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.action !== "detectPlatform") return undefined;
+  PlatformDetect.run(msg.url).then(sendResponse, (e) => sendResponse({ error: String((e && e.message) || e) }));
+  return true; // answers asynchronously
 });
 
 // ---------- entry points used by the Techfill orb and the popup ----------

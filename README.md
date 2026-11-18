@@ -2,7 +2,7 @@
 
 > **Merged build (Moonfill 2.1 = Moonfill 2.0 + Techfill 0.3).** Start with `docs/MERGED_BUILD.md`; full specifications: `docs/MOONFILL_SPEC.md`, `docs/TECHFILL_SPEC.md`; how everything fits: `docs/INTEGRATION_BRIEF.md`.
 >
-> Techfill: on an Implementation record a draggable round pen button fills the technical checklist from a preset (hover it for the menu).
+> Techfill: on an Implementation record a draggable round pen button fills the technical checklist from a preset (hover it for the menu). The platform is **detected automatically** from the record's Landing Page URL and the right preset is selected for you (a small red message says so); this needs the broad site-read host permission declared in the manifest.
 
 **Run a Moonpull integration scan from Salesforce in one click, and get the result posted in the record's Chatter automatically.**
 

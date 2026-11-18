@@ -247,7 +247,7 @@ Page console (Salesforce tab): `[Techfill] <full report>` after each run, `[Tech
 3. Shadow DOM is not pierced (Lightning's synthetic shadow has been sufficient).
 4. Date read-back tolerates display formats it can parse; an unreadable format is treated as "cannot verify" (no warning). Checkbox/radio targets are not read back.
 5. The unexpected-change guard can fire on a legitimate dependent-field change; it then refuses to auto-save and names the field.
-6. Platform auto-detection (from the client's landing page) is **not** implemented; the agent picks the preset. It was deliberately postponed because it needs a background script and a broad optional host permission.
+6. Platform auto-detection (from the client's landing page) is **not** in the standalone build (it needs a background script and a broad host permission); it exists in the merged build (§16b).
 7. Multi-select and lookup fields are unsupported.
 
 ## 16. Tests
@@ -255,6 +255,10 @@ Page console (Salesforce tab): `[Techfill] <full report>` after each run, `[Tech
 Automated (run in Node, no browser): date parsing/formatting and value comparison (15 cases), Access decision (7 cases), scan-field exclusion and override flags in the preset parser, migration stripping of old preset lines. A headless-browser preview exercised: orb drag and persisted position, hover menu, preset switching, Parameters visibility (Standard/GTM yes, Shopify no), Yes/No write-back changing exactly one line, panel placement without overlap, mode chip toggle.
 
 Manual checklist on a real record: (1) Fill on an empty test record in Review mode, inspect; (2) Save mode, check the read-back note; (3) open edit mode yourself then click Fill → must refuse; (4) change a Parameters value on a record that already has a different value → Fill must overwrite it; (5) Client Type Access with a non-Access Platform Offer → SingleView = MasterTag enabled / New; (6) Reset then Fill round-trip; (7) navigate to another record mid-run.
+
+## 16b. Automatic platform detection (merged build only)
+
+Not in the standalone Techfill 0.3. In the merged Moonfill 2.1 the preset is chosen automatically from the record's **Landing Page URL**; see `MERGED_BUILD.md` §7b for the full description. Summary: the orb asks the background to read the client's site and recognise one of 13 platforms (BigCommerce, Lightspeed, Magento, OpenCart, PrestaShop, Salesforce Commerce Cloud, Shopify, Shoplazza, Shopware 5, Shopware 6, Squarespace, Wix, WooCommerce); the matching preset (one of 15 ready-made presets: the six in §5.2 plus nine platform presets) becomes the active one; a small red message "PLATFORM DETECTED AUTOMATICALLY · <name>" appears beside the orb, the menu shows a red line and an `AUTO` tag. Presets for the nine added platforms use the team template values (eCommerce platform, Tag Management Solution `Other`, Deduplication Solution `Other` + "<Platform> plugin", Voucher and Product Level Tracking). Storage marker `presetsV` is 4.
 
 ## 17. Integration notes (merging into the integrator)
 

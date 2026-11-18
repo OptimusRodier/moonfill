@@ -28,7 +28,7 @@
   let selfWrite = false;
   const ORB = 46;      // size of the floating button
   const EDGE = 8;      // keep this far from the window edge
-  const BUILD = "0.3-merged"; // internal stamp: a dock built by an older build is rebuilt
+  const BUILD = "0.4-merged"; // internal stamp: a dock built by an older build is rebuilt
   const SEL_ID = "techfill-preset";
   const PANEL_ID = "techfill-panel";
   const STYLE_ID = "techfill-style";
@@ -527,6 +527,22 @@
       ${D} .tf-params:hover:not(:disabled){border-color:#4cc3f5;color:#fff}
       ${D} .tf-params.on{border-color:#f8d559;color:#f8d559}
       ${D} [hidden]{display:none!important}
+      /* automatic platform detection: a small red message beside the orb, a red line and tag in the menu */
+      ${D} .tf-toast{position:absolute;top:50%;left:${ORB + 14}px;display:flex;align-items:center;gap:9px;white-space:nowrap;padding:7px 14px 7px 10px;
+        border-radius:999px;background:linear-gradient(135deg,#e0484b,#ff6b5e);color:#fff;opacity:0;pointer-events:none;
+        transform:translateY(-50%) translateX(-8px);transition:opacity .3s ease,transform .3s ease;
+        box-shadow:0 8px 22px rgba(224,72,75,.55),inset 0 0 0 1.5px rgba(255,255,255,.22)}
+      ${D}.tf-flip-x .tf-toast{left:auto;right:${ORB + 14}px;transform:translateY(-50%) translateX(8px)}
+      ${D} .tf-toast.show{opacity:1;transform:translateY(-50%);animation:tf-pop .55s ease both,tf-glow 1.5s ease-in-out .55s 3}
+      ${D}.open .tf-toast{opacity:0;animation:none}
+      ${D} .tf-toast svg{width:17px;height:17px;fill:#fff;flex:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+      ${D} .tf-toast .tf-t1{display:block;font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;opacity:.92}
+      ${D} .tf-toast .tf-t2{display:block;font-size:13px;font-weight:800;letter-spacing:.01em;margin-top:2px}
+      @keyframes tf-pop{0%{transform:translateY(-50%) scale(.78);opacity:0}60%{transform:translateY(-50%) scale(1.07);opacity:1}100%{transform:translateY(-50%) scale(1);opacity:1}}
+      @keyframes tf-glow{50%{box-shadow:0 8px 30px rgba(255,107,94,.95),inset 0 0 0 1.5px rgba(255,255,255,.4)}}
+      ${D} .tf-autoline{margin:-4px 0 10px;font-size:11px;font-weight:700;color:#ff8a85}
+      ${D} .tf-autoline.none{color:#8ea6c4;font-weight:500}
+      ${D} .tf-autotag{margin-left:auto;padding:1px 7px;border-radius:999px;background:#e0484b;color:#fff;font-size:9px;font-weight:800;letter-spacing:.1em}
       ${D} .tf-badge{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;display:none;pointer-events:none;
         background:#f8d559;color:#0b2354;font:700 11px/19px -apple-system,"Segoe UI",system-ui,sans-serif;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.45)}
       ${D} .tf-badge.on{display:block}
@@ -958,6 +974,7 @@
         const row = el("button", "tf-row" + (p.id === active ? " active" : ""));
         row.type = "button";
         row.append(el("span", "tf-dot"), el("span", null, p.name));
+        if (detect.presetId === p.id && detect.rid === currentRecordId()) row.append(el("span", "tf-autotag", "AUTO"));
         row.addEventListener("click", () => chrome.storage.local.set({ activePreset: p.id }));
         list.appendChild(row);
       });
@@ -972,6 +989,109 @@
       if (pb) pb.hidden = !eligible;
       if (paramsOpen && !keepParams) { if (eligible) openParams(); else removePanel(); }
     } catch (e) { /* extension was reloaded: this page needs a refresh */ }
+  }
+
+  // ---------- automatic platform detection ----------
+  // When an Implementation record opens, its "Landing Page URL" is read, the background reads that site
+  // and recognises the platform, and the matching preset is selected: nothing to click, ready to Fill.
+  const detect = { rid: null, url: null, state: "idle", name: null, presetId: null, at: 0 };
+  let toastTimer = null;
+
+  // The preset list always holds every ready-made preset (a fresh install needs no visit to the popup)
+  async function initPresets() {
+    try {
+      const C = TechfillCore;
+      const s = await chrome.storage.local.get(["presets", "activePreset", "presetsV"]);
+      if (s.presetsV === 4 && s.presets && s.presets.length) return;
+      const list = C.upgradePresets(s.presets || []);
+      const std = list.find((p) => p.key === "standard") || list[0];
+      const active = list.some((p) => p.id === s.activePreset) ? s.activePreset : std.id;
+      await chrome.storage.local.set({ presets: list, activePreset: active, presetsV: 4 });
+    } catch (e) { /* extension was reloaded */ }
+  }
+
+  function webAddress(raw) {
+    const t = String(raw == null ? "" : raw).trim();
+    if (!t || /\s/.test(t)) return null;
+    if (/^https?:\/\//i.test(t)) return t;
+    return /^[\w-]+(\.[\w-]+)+([/?#:].*)?$/.test(t) ? "https://" + t : null;
+  }
+  // The client's site: the record's "Landing Page URL" (a link's address is preferred over its text)
+  function landingPageUrl() {
+    for (const l of root().querySelectorAll(".test-id__field-label, .slds-form-element__label, .slds-form-element__legend")) {
+      if (labelText(l) !== "landing page url") continue;
+      const box = l.closest(".slds-form-element, records-record-layout-item, force-record-layout-item");
+      if (!box) continue;
+      const href = Array.from(box.querySelectorAll("a[href]")).map((a) => a.getAttribute("href")).find((h) => /^https?:\/\//i.test(h));
+      const input = box.querySelector("input:not([type=checkbox]):not([type=radio]), textarea");
+      const text = (box.querySelector("lightning-formatted-text, lightning-formatted-url, .test-id__field-value, .slds-form-element__static") || {}).textContent;
+      const url = webAddress(href || text || (input && input.value));
+      if (url) return url;
+    }
+    return null;
+  }
+
+  function showToast(name) {
+    const dock = document.getElementById(DOCK_ID);
+    const t = dock && dock.querySelector(".tf-toast");
+    if (!t) return;
+    t.querySelector(".tf-t2").textContent = name;
+    t.classList.remove("show");
+    void t.offsetWidth; // restart the animation
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 9000);
+  }
+  function updateAutoLine() {
+    const dock = document.getElementById(DOCK_ID);
+    const line = dock && dock.querySelector(".tf-autoline");
+    if (!line) return;
+    const mine = detect.rid === currentRecordId();
+    if (mine && detect.name) { line.textContent = `⚡ Detected automatically: ${detect.name}`; line.className = "tf-autoline"; line.hidden = false; }
+    else if (mine && detect.state === "done") { line.textContent = "Platform not detected: pick it from the list"; line.className = "tf-autoline none"; line.hidden = false; }
+    else line.hidden = true;
+  }
+
+  async function applyDetection(rid, answer) {
+    if (detect.rid !== rid) return; // the agent moved to another record meanwhile
+    detect.state = "done";
+    const C = TechfillCore;
+    const key = answer && answer.name ? C.PLATFORM_KEYS[answer.name] : null;
+    if (!key) { updateAutoLine(); return; }
+    const s = await chrome.storage.local.get(["presets", "activePreset"]);
+    let presets = s.presets || [];
+    let preset = presets.find((p) => p.key === key);
+    if (!preset) { // a preset the saved list does not have yet
+      presets = C.upgradePresets(presets);
+      preset = presets.find((p) => p.key === key);
+      await chrome.storage.local.set({ presets });
+    }
+    if (!preset || detect.rid !== rid) return;
+    detect.name = answer.name;
+    detect.presetId = preset.id;
+    if (s.activePreset !== preset.id) await chrome.storage.local.set({ activePreset: preset.id });
+    await refreshPresets();
+    updateAutoLine();
+    showToast(answer.name);
+  }
+
+  // Called every second by ensureButton: once per record, as soon as its landing page shows
+  function autoDetectTick() {
+    const rid = currentRecordId();
+    if (detect.rid !== rid) {
+      Object.assign(detect, { rid, url: null, state: "idle", name: null, presetId: null });
+      const t = document.querySelector(`#${DOCK_ID} .tf-toast`);
+      if (t) t.classList.remove("show");
+      updateAutoLine();
+    }
+    if (detect.state !== "idle" || document.visibilityState !== "visible") return;
+    const url = landingPageUrl();
+    if (!url) return;
+    detect.state = "running";
+    detect.url = url;
+    chrome.runtime.sendMessage({ action: "detectPlatform", url })
+      .then((answer) => applyDetection(rid, answer))
+      .catch(() => { if (detect.rid === rid) detect.state = "done"; });
   }
 
   // ---------- Moonfill scans: a badge on the orb and one line in the menu ----------
@@ -1229,6 +1349,8 @@
     pbtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg><span>Parameters</span>';
     pbtn.addEventListener("click", () => (paramsOpen ? removePanel() : openParams()));
     // Moonfill's scans, summarised: click opens its popup (jobs, history, Force paste)
+    const autoLine = el("div", "tf-autoline");
+    autoLine.hidden = true;
     const scans = el("button", "tf-scans");
     scans.type = "button";
     scans.title = "Open the Moonpull scans";
@@ -1236,10 +1358,12 @@
     const presetsLink = el("button", "tf-link", "Edit presets…");
     presetsLink.type = "button";
     presetsLink.addEventListener("click", () => openPresetsPanel());
-    card.append(head, el("div", "tf-label", "Preset"), list, actions, pbtn, el("div", "tf-status"), scans, presetsLink);
+    card.append(head, el("div", "tf-label", "Preset"), list, autoLine, actions, pbtn, el("div", "tf-status"), scans, presetsLink);
     menu.appendChild(card);
     const badge = el("span", "tf-badge");
-    dock.append(menu, orb, badge);
+    const toast = el("div", "tf-toast");
+    toast.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg><span><span class="tf-t1">Platform detected automatically</span><span class="tf-t2"></span></span>';
+    dock.append(menu, orb, badge, toast);
 
     // --- open on hover, close shortly after the pointer leaves ---
     let suppressOpen = false; // after a click that closed everything, hovering must not reopen the menu
@@ -1302,7 +1426,7 @@
 
     document.body.appendChild(dock);
     placeDock(dock);
-    refreshPresets();
+    initPresets().then(() => refreshPresets());
     refreshScans();
     chrome.storage.local.get("dockPos").then((s) => { if (s.dockPos) { dockPos = s.dockPos; placeDock(dock); } }).catch(() => {});
   }
@@ -1349,7 +1473,8 @@
       return;
     }
     if (existing && existing.dataset.build !== BUILD) { existing.remove(); buildDock(); return; } // left by an older build
-    if (existing || !document.body) return;
+    if (existing) { autoDetectTick(); return; }
+    if (!document.body) return;
     buildDock();
   }
   setInterval(ensureButton, 1000);

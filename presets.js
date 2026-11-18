@@ -10,7 +10,7 @@ const { BASE, DEFAULTS, makeTemplate, uid, defaultPreset, stripScanLines } = Tec
 const $ = (id) => document.getElementById(id);
 // The five scan fields belong to Moonfill: strip them from presets saved by older versions
 
-let state = { presets: [], activePreset: null, autoSave: false, presetsV: 3 };
+let state = { presets: [], activePreset: null, autoSave: false, presetsV: 4 };
 let flashTimer = null;
 let deleteArmed = false;
 let resetArmed = false;
@@ -63,6 +63,11 @@ async function load() {
   if (!s.presetsV || s.presetsV < 3) {
     // v3: the five scan fields are Moonfill's; presets also keep a list of Parameters-panel overrides
     presets = presets.map((p) => ({ ...p, text: stripScanLines(p.text), overrides: p.overrides || [] }));
+  }
+
+  if (!s.presetsV || s.presetsV < 4) {
+    // v4: the platforms added with automatic detection (BigCommerce, Lightspeed, ...) exist as presets
+    DEFAULTS.forEach((d) => { if (!presets.some((p) => p.key === d.key)) presets.push(defaultPreset(d)); });
   }
 
   state.presets = presets;

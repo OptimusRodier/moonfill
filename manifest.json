@@ -17,7 +17,9 @@
     "https://forms.office.com/*",
     "https://forms.cloud.microsoft/*",
     "https://awin.lightning.force.com/*",
-    "https://zanox.sharepoint.com/*"
+    "https://zanox.sharepoint.com/*",
+    "https://*/*",
+    "http://*/*"
   ],
   "action": {
     "default_popup": "popup.html",

@@ -67,9 +67,28 @@ const DEFAULTS = [
   { key: "woocommerce", name: "WooCommerce", ecom: "Wordpress (Woocommerce)", tms: "Not Applicable" },
   { key: "magento", name: "Magento", ecom: "Magento", tms: "Not Applicable" },
   { key: "prestashop", name: "PrestaShop", ecom: "Prestashop", tms: "Not Applicable" },
-  { key: "gtm", name: "GTM", ecom: "Not Applicable", tms: "GTM (Google Tag Manager)" }
+  { key: "gtm", name: "GTM", ecom: "Not Applicable", tms: "GTM (Google Tag Manager)" },
+  // Platforms added with the automatic platform detection. Values (eCommerce platform, Tag Management
+  // Solution, Deduplication, Voucher / Product Level Tracking) are the Checklist Autofill team templates.
+    {"key": "bigcommerce", "name": "BigCommerce", "ecom": "Bigcommerce", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "BigCommerce plugin"}},
+    {"key": "lightspeed", "name": "Lightspeed", "ecom": "Lightspeed", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "Lightspeed plugin"}},
+    {"key": "opencart", "name": "OpenCart", "ecom": "OpenCart", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "OpenCart plugin"}},
+    {"key": "sfcc", "name": "Salesforce Commerce Cloud", "ecom": "Salesforce Commerce Cloud", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "Salesforce Commerce Cloud plugin"}},
+    {"key": "shoplazza", "name": "Shoplazza", "ecom": "Shoplazza", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "Shoplazza plugin"}},
+    {"key": "shopware5", "name": "Shopware 5", "ecom": "Shopware", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "Shopware 5 plugin"}},
+    {"key": "shopware6", "name": "Shopware 6", "ecom": "Shopware", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "Shopware 6 plugin"}},
+    {"key": "squarespace", "name": "Squarespace", "ecom": "Squarespace", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "Yes", "Other Deduplication Solution": "Squarespace plugin"}},
+    {"key": "wix", "name": "Wix", "ecom": "Wix", "tms": "Other", "lines": {"Deduplication Solution": "Other", "Voucher Tracking implemented": "Unknown", "Product Level Tracking implemented": "No", "Other Deduplication Solution": "Wix plugin"}}
 ];
-const makeTemplate = (d) => BASE.replace("{ecom}", d.ecom).replace("{tms}", d.tms);
+const makeTemplate = (d) => {
+    let t = BASE.replace("{ecom}", d.ecom).replace("{tms}", d.tms);
+    // platform-specific lines replace (or add) the matching "Label = value" line, commented or not
+    Object.entries(d.lines || {}).forEach(([label, value]) => {
+      const re = new RegExp("^#?[ \\t]*" + label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[ \\t]*=.*$", "m");
+      t = re.test(t) ? t.replace(re, `${label} = ${value}`) : t + `\n${label} = ${value}`;
+    });
+    return t;
+  };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const defaultPreset = (d) => ({ id: uid(), key: d.key, name: d.name, text: makeTemplate(d), overrides: [] });
 const SCAN_LABELS = ["moonpull status", "consent signals", "transparency & consent framework plugin", "aasaf", "consent management platform"];
@@ -80,5 +99,17 @@ const stripScanLines = (text) => String(text || "").split("\n").filter((line) =>
   const i = t.indexOf("=");
   return i < 1 || !SCAN_LABELS.includes(t.slice(0, i).replace(/\s+/g, " ").trim().toLowerCase());
 }).join("\n");
-  return { BASE, DEFAULTS, makeTemplate, uid, defaultPreset, stripScanLines };
+  // Detected platform name (see detect-platform.js) -> preset key
+  const PLATFORM_KEYS = {
+    "Shopify": "shopify", "WooCommerce": "woocommerce", "Magento": "magento", "PrestaShop": "prestashop",
+    "BigCommerce": "bigcommerce", "Lightspeed": "lightspeed", "OpenCart": "opencart", "Salesforce Commerce Cloud": "sfcc",
+    "Shoplazza": "shoplazza", "Shopware 5": "shopware5", "Shopware 6": "shopware6", "Squarespace": "squarespace", "Wix": "wix"
+  };
+  // Saved presets brought up to date: scan lines stripped, overrides list present, every ready-made preset exists
+  function upgradePresets(list) {
+    const out = (list || []).map((p) => ({ ...p, text: stripScanLines(p.text), overrides: p.overrides || [] }));
+    DEFAULTS.forEach((d) => { if (!out.some((p) => p.key === d.key)) out.push(defaultPreset(d)); });
+    return out;
+  }
+  return { BASE, DEFAULTS, makeTemplate, uid, defaultPreset, stripScanLines, PLATFORM_KEYS, upgradePresets };
 })();

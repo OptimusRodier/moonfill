@@ -62,7 +62,7 @@ Only the Standard and GTM presets have a Parameters panel (e-commerce platform p
 * **Salesforce page access.** Always scope to the *active* page container (`.oneContent.active`) and to *visible* elements: Lightning keeps previously opened records hidden in the DOM. Find fields by their label text (`.test-id__field-label` / `.slds-form-element__label`), never by position.
 * **Safe writes.** Snapshot → write → verify the control shows the value → compare snapshot → save once → read back. Refuse to start when the form is already in edit mode (unless the tool itself left it open).
 * **Visibility.** Writing needs a *visible* page. When the browser window is covered or minimized the page reports hidden; Moonfill parks the work, retries on focus, offers Force paste, and tries a temporary window (open issue, Moonfill SPEC §8.3).
-* **No hidden network.** Today the only network traffic is SharePoint reads (Moonfill). Keep it that way, or document and permission any addition (a platform auto-detection feature that fetches client sites was postponed for exactly this reason).
+* **Network traffic is explicit.** SharePoint reads (Moonfill) and, in the merged build, one GET of the client's landing page for platform detection (credentials omitted, cached, private hosts refused). The latter needs the broad `https://*/*` + `http://*/*` host permission — the widest permission of the extension; review it when merging into the integrator and keep any new traffic documented.
 * **Palette.** Deep blue `#0b2354 → #1f54a2`, light blue `#17a7e8` / `#4cc3f5`, moon yellow `#f8d559`. Rounded pills, soft shadows, a dashed "stitched" ring on the orb.
 * **UI model.** One draggable round **orb** (pen icon) that opens a menu on hover; no always-on panels; panels open only when asked (Parameters) or to report a result. Persist the orb position as ratios (`dockPos`) in extension storage.
 * **Version stamps.** DOM ids and a `BUILD` stamp are used so a new script replaces UI left by an old script after an extension reload.
@@ -89,7 +89,7 @@ Only the Standard and GTM presets have a Parameters panel (e-commerce platform p
 1. **Platform Offer wording** (§4.2) — confirm label and "Access" option text.
 2. **Pixel Sent** — Techfill defaults to today's date (`{today}`); the colleague's checklist autofill uses the record's creation date (`{created}` is available in Techfill presets). Decide the rule.
 3. **AASAF** — "Yes only if both association lines are 1" is the current reading; confirm.
-4. **Platform auto-detection** from the client's landing page — valuable (removes the manual preset pick) but needs a background script and an optional broad host permission; decide when merging into the integrator, which already has a background worker.
+4. **Platform auto-detection** — now implemented in the merged build (`MERGED_BUILD.md` §7b), without a permission prompt. Open points: review the broad host permission, and confirm the platform signs and the nine added platform presets' values with the process owner. It does not detect Google Tag Manager.
 5. **Temporary window** for hidden browsers — unresolved (Moonfill SPEC §8.3); decide whether to rely on the occlusion flag, a notification-first flow, or a different mechanism.
 6. **Overwrite policy** for Techfill's fields outside Parameters (currently empty-only).
 7. Whether the integrator should expose the Moonpull scan status inside the orb menu (recommended) instead of a separate toolbar popup.

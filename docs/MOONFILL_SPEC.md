@@ -40,7 +40,7 @@ Non-goals: it does not decide the scan's content, does not edit the Moonpull flo
 ## 3. Environment, permissions
 
 * Chromium browsers (Chrome, Edge), MV3 service worker.
-* Host permissions: `forms.office.com`, `forms.cloud.microsoft` (the form), `awin.lightning.force.com` (Salesforce), `zanox.sharepoint.com` (result files). The user must be **signed in** to SharePoint and Salesforce in the same browser; Moonfill reuses those sessions (`fetch` with `credentials: "include"`).
+* Host permissions: `forms.office.com`, `forms.cloud.microsoft` (the form), `awin.lightning.force.com` (Salesforce), `zanox.sharepoint.com` (result files). **Merged build only:** also `https://*/*` and `http://*/*` so the background can read a client's landing page for automatic platform detection (see `MERGED_BUILD.md` §7b); Moonfill's own scan flow does not use it. The user must be **signed in** to SharePoint and Salesforce in the same browser; Moonfill reuses those sessions (`fetch` with `credentials: "include"`).
 * Extension permissions and why: `tabs` (open/find/close tabs), `storage` (jobs), `activeTab`, `scripting`, `webRequest` (read the Forms response id from the submit response header), `alarms` (wake the worker), `notifications`, `tabGroups` (New Implementation / IR tab groups).
 * No external servers. The only network calls are to SharePoint (read result), Salesforce (page itself), Forms (page itself).
 
