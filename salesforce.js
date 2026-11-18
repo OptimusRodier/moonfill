@@ -196,10 +196,12 @@ function getProgramName() {
 }
 
 // --- Buttons: look + spacing ---
+const BUILD = "2.0-d"; // internal stamp: buttons built by an older build are rebuilt
 const BUTTON_GAP_PX = 24; // space between the buttons: raise it for even more room
 
 function injectStyles() {
-  if (document.getElementById("moonfillStyle")) return;
+  const old = document.getElementById("moonfillStyle");
+  if (old) old.remove();
   const st = document.createElement("style");
   st.id = "moonfillStyle";
   st.textContent = `
@@ -247,6 +249,7 @@ function injectButton(cardBody, mid, geo) {
   container.id = "moonfillSalesforceSection";
   container.className = "mf-row";
   container.dataset.recordId = getRecordIdFromUrl() || "";
+  container.dataset.v = BUILD;
 
   const hasMid = !!(mid && mid.length >= 3);
   const noMid = "MID not found on this record";
@@ -313,7 +316,7 @@ function ensureCaseButton() {
   const root = activeRoot();
   const mid = readCaseMid() || "";
   const current = root.querySelector("#moonfillCaseSection");
-  if (current && current.dataset.caseId === caseId && current.dataset.mid === mid && isVisible(current)) return;
+  if (current && current.dataset.caseId === caseId && current.dataset.mid === mid && current.dataset.v === BUILD && isVisible(current)) return;
 
   const header = Array.from(root.querySelectorAll(".slds-card__header-title"))
     .find((e) => e.textContent.trim().toLowerCase() === "case details" && isVisible(e));
@@ -327,6 +330,7 @@ function ensureCaseButton() {
   section.className = "mf-row mf-single";
   section.dataset.caseId = caseId;
   section.dataset.mid = mid;
+  section.dataset.v = BUILD;
   section.appendChild(makeButton("mf-ir", "🔎", "IR", {
     enabled: !!mid,
     title: mid ? `Open the Internal Review tabs for MID ${mid}` : "MID not found in Program (Signed Product) Details yet",
@@ -419,7 +423,7 @@ async function postToChatter(text, recordId, share, opts = {}) {
   // After the tab was brought forward: if the page is still not visible, the browser
   // window itself is hidden (covered by another app or minimized). Report it at once.
   if (opts.activated) {
-    await waitFor(() => document.visibilityState === "visible", 2000);
+    await waitFor(() => document.visibilityState === "visible", opts.visibleWaitMs || 2000);
     if (document.visibilityState !== "visible") return fail("the browser window is not visible");
   }
 
@@ -481,7 +485,7 @@ async function postToChatter(text, recordId, share, opts = {}) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.action !== "moonfillPost") return;
-  postToChatter(msg.text, msg.recordId, msg.share !== false, { fast: !!msg.fast, activated: !!msg.activated })
+  postToChatter(msg.text, msg.recordId, msg.share !== false, { fast: !!msg.fast, activated: !!msg.activated, visibleWaitMs: msg.visibleWaitMs })
     .then(sendResponse)
     .catch((e) => sendResponse(fail(String((e && e.message) || e), false)));
   return true; // async response
@@ -647,7 +651,24 @@ async function ffEnsureEditMode() {
   return !!found;
 }
 
+// One writer at a time on the record: Techfill takes the same lock (<html data-awin-edit-lock>) while it fills.
+// If Techfill left its review form open on this record, the scan fields are filled into it but NOT saved.
 async function fillMoonpullFields(recordId, fields, save) {
+  const root = document.documentElement;
+  const free = await waitFor(() => !root.dataset.awinEditLock || root.dataset.awinEditLock === "moonfill", 30000, 500);
+  if (!free) return { ok: false, error: "Techfill is filling this record, so the scan fields were not filled (Force paste retries)" };
+  root.dataset.awinEditLock = "moonfill";
+  try {
+    const reviewForm = root.dataset.techfillOpenEdit === recordId && ffVisibleAll(FF_SAVE).length > 0;
+    const rep = await fillMoonpullFieldsInner(recordId, fields, save && !reviewForm);
+    if (reviewForm && rep && rep.ok) { rep.reviewForm = true; rep.keepOpen = rep.keepOpen || rep.set.length > 0; }
+    return rep;
+  } finally {
+    if (root.dataset.awinEditLock === "moonfill") delete root.dataset.awinEditLock;
+  }
+}
+
+async function fillMoonpullFieldsInner(recordId, fields, save) {
   if (getRecordIdFromUrl() !== recordId) return { ok: false, error: "the page is not on the expected record" };
   if (document.visibilityState !== "visible") return { ok: false, error: "the page is not visible" };
   const rep = { ok: true, set: [], same: [], notfound: [], problem: [], saved: false, keepOpen: false, saveFailed: false };
@@ -658,12 +679,29 @@ async function fillMoonpullFields(recordId, fields, save) {
   if (!(await ffEnsureEditMode())) return { ok: false, error: "could not open edit mode on the Details tab" };
   await sleep(300);
 
+  // Fields lower on the page can still be drawing when the Details tab has just opened:
+  // wait for each one (expanding collapsed sections) and give misses a second chance.
+  const results = new Map();
+  const tryField = async (f) => {
+    if (!ffFindFieldBox(f.label)) await waitFor(() => { ffExpandSections(); return ffFindFieldBox(f.label); }, 8000, 300);
+    return ffApplyField(f);
+  };
   for (const f of fields) {
     if (getRecordIdFromUrl() !== recordId) return { ...rep, ok: false, error: "moved to another record while filling" };
-    const r = await ffApplyField(f);
+    results.set(f.label, await tryField(f));
+    await sleep(250);
+  }
+  const retry = fields.filter((f) => ["notfound", "problem"].includes(results.get(f.label).status));
+  if (retry.length) {
+    await sleep(1500);
+    for (const f of retry) results.set(f.label, await tryField(f));
+  }
+  for (const f of fields) {
+    const r = results.get(f.label);
     if (r.status === "problem") rep.problem.push(`${f.label}: ${r.why}`);
     else rep[r.status].push(f.label);
   }
+  console.log("[Moonfill] field fill:", rep);
 
   if (!rep.set.length) { // nothing changed: leave edit mode cleanly
     const cancel = ffInScope(FF_CANCEL)[0] || ffVisibleAll(FF_CANCEL)[0];
@@ -695,7 +733,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // arrive from the list, Teams, a pasted link or the back button.
 function buttonIsCurrent() {
   const b = activeRoot().querySelector("#moonfillSalesforceSection");
-  return !!b && b.dataset.recordId === getRecordIdFromUrl() && isVisible(b);
+  return !!b && b.dataset.recordId === getRecordIdFromUrl() && b.dataset.v === BUILD && isVisible(b);
 }
 
 setInterval(() => {

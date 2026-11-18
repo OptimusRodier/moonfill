@@ -2,8 +2,17 @@
   "manifest_version": 3,
   "name": "Moonfill",
   "version": "2.1",
-  "description": "Moonfill automates and speeds up the completion of the Moonpull form. Just enter your MID and region, and Moonfill takes care of the rest effortlessly.",
-  "permissions": ["tabs", "storage", "activeTab", "scripting", "webRequest", "alarms", "notifications", "tabGroups"],
+  "description": "Moonfill automates the Moonpull scan round trip (form, result in Chatter, scan fields) and includes Techfill, which fills the technical checklist of an Implementation record from a preset.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "activeTab",
+    "scripting",
+    "webRequest",
+    "alarms",
+    "notifications",
+    "tabGroups"
+  ],
   "host_permissions": [
     "https://forms.office.com/*",
     "https://forms.cloud.microsoft/*",
@@ -28,12 +37,23 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://forms.office.com/*", "https://forms.cloud.microsoft/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://forms.office.com/*",
+        "https://forms.cloud.microsoft/*"
+      ],
+      "js": [
+        "content.js"
+      ]
     },
     {
-      "matches": ["https://awin.lightning.force.com/*"],
-      "js": ["salesforce.js"]
+      "matches": [
+        "https://awin.lightning.force.com/*"
+      ],
+      "js": [
+        "techfill-core.js",
+        "salesforce.js",
+        "techfill.js"
+      ]
     }
   ]
 }

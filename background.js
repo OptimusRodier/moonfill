@@ -10,7 +10,9 @@
 const RESULT_FOLDER_URL =
   "https://zanox.sharepoint.com/teams/Global-MoonpullI-Integration/Shared%20Documents/General/batch%20results%20use%20cases/Integartion%20Tests/Moonpull%20Integration%20dataCenter/";
 
-const POLL_MS = 10 * 1000;                 // check every 10 s, starting the moment the form is submitted
+const POLL_FAST_MS = 2000;                 // from 2:30 on, when the result is due (3-5 min), look every 2 s
+const FAST_AFTER_MS = 150 * 1000;
+const POLL_MS = 10 * 1000;                 // before that, check every 10 s from the moment the form is submitted
                                            // (the result file lives ~30 s, so never poll slower than ~15 s)
 const JOB_TIMEOUT_MS = 6.5 * 60 * 1000;    // result appears ~5:00 and is deleted ~30 s later, stop at 6:30
 const PARKED_TIMEOUT_MS = 8 * 60 * 60 * 1000; // a waiting result is kept for 8 hours
@@ -98,8 +100,9 @@ const CMP_OPTIONS = ["Cookiebot", "Iubenda", "OneTrust", "Osano", "Sourcepoint",
 const flat = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
 
 function resultLine(text, key) {
-  const m = new RegExp("^[ \\t]*" + key + "[ \\t]*:[ \\t]*(.*)$", "im").exec(text);
-  return m ? m[1].trim() : null; // null = the line is not in the result
+  // tolerant: bullets / bold markers before the key, the key anywhere on its line
+  const m = new RegExp("(?<![A-Za-z0-9_])" + key + "[*_ \\t]*:[ \\t]*(.*)$", "im").exec(text);
+  return m ? m[1].replace(/^[*_\s]+|[*_\s]+$/g, "") : null; // null = the line is not in the result
 }
 
 function parseMoonpullFields(raw) {
@@ -119,24 +122,21 @@ function parseMoonpullFields(raw) {
   }
 
   const yesNo = (s) => (/^true$/i.test(s || "") ? "Yes" : /^false$/i.test(s || "") ? "No" : null);
-  const consent = yesNo(resultLine(raw, "EnhancedCustomVariable_AfterConsent"));
-  if (consent) add("Consent Signals", consent);
-  const tcf = yesNo(resultLine(raw, "EnhancedCustomVariable_AfterConsentAndRefresh"));
-  if (tcf) add("Transparency & Consent Framework Plugin", tcf);
+  // Yes/No fields: anything that is not an explicit true (missing line included) is No
+  add("Consent Signals", yesNo(resultLine(raw, "EnhancedCustomVariable_AfterConsent")) || "No");
+  add("Transparency & Consent Framework Plugin", yesNo(resultLine(raw, "EnhancedCustomVariable_AfterConsentAndRefresh")) || "No");
 
   // AASAF: Yes only when every association line that is in the result says 1
   const flags = ["Apple Site App Association", "Android Site App Association"]
     .map((k) => resultLine(raw, k))
     .filter((v) => v !== null)
     .map((v) => v === "1");
-  if (flags.length) add("AASAF", flags.every(Boolean) ? "Yes" : "No");
+  add("AASAF", flags.length && flags.every(Boolean) ? "Yes" : "No");
 
   // Consent Management Platform: a listed CMP, otherwise Other
   const cmp = resultLine(raw, "Enhanced CMP Details");
-  if (cmp !== null) {
-    const hit = CMP_OPTIONS.find((o) => flat(cmp).includes(flat(o)));
-    add("Consent Management Platform", hit || "Other");
-  }
+  const hit = cmp !== null && CMP_OPTIONS.find((o) => flat(cmp).includes(flat(o)));
+  add("Consent Management Platform", hit || "Other"); // no matching option (or no line) = Other
   return out;
 }
 
@@ -334,7 +334,8 @@ async function ensurePolling() {
         if (job.state === "waiting") await processJob(job);
         else if (job.state === "waiting_browser") await retryParked(job);
       }
-      await sleep(POLL_MS);
+      const due = active.some((j) => j.state === "waiting" && Date.now() - (j.submittedAt || j.startedAt) >= FAST_AFTER_MS);
+      await sleep(due ? POLL_FAST_MS : POLL_MS);
     }
   } finally {
     polling = false;
@@ -457,7 +458,8 @@ async function attemptPost(job, text, forced) {
     console.log("Moonfill post steps:", (job.trace || []).join(" -> "));
 
     if (res.ok) {
-      job.fillNote = fillNoteOf(res.fill);
+      job.fillNote = fillNoteOf(res.fill, job);
+      console.log("Moonfill fields sent:", JSON.stringify(job.fields || []), "->", JSON.stringify(res.fill || null));
       await finishJob(job, "done", null, res.note);
       notify(
         "Moonfill: result pasted",
@@ -502,6 +504,23 @@ async function forcePost(jobId) {
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || msg.action !== "forcePost" || !msg.jobId) return;
   forcePost(msg.jobId);
+});
+
+// ---------- entry points used by the Techfill orb and the popup ----------
+async function openPresetsWindow() {
+  const url = chrome.runtime.getURL("presets.html");
+  const [existing] = await chrome.tabs.query({ url });
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true });
+    await chrome.windows.update(existing.windowId, { focused: true });
+    return;
+  }
+  await chrome.windows.create({ url, type: "popup", width: 500, height: 780 });
+}
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg) return;
+  if (msg.action === "openPresets") openPresetsWindow().catch(() => {});
+  else if (msg.action === "openMoonfillPopup") openMoonfill().catch(() => {});
 });
 
 // ---------- New Implementation / IR: open the setup tabs for a MID as one tab group ----------
@@ -559,13 +578,19 @@ function tr(job, msg) {
 const describe = (res) =>
   res.ok ? "ok" : (res.error || "failed") + (res.hidden ? " (page hidden)" : "") + (res.retry ? "" : " (no retry)");
 
-function fillNoteOf(f) {
-  if (!f) return "";
-  if (f.ok === false) return `Fields not filled: ${f.error || "unknown error"}`;
+const FIELD_LABELS = ["Moonpull Status"]; // the Yes/No fields default to No and the CMP to Other, so only this one can be missing
+
+function fillNoteOf(f, job) {
   const bits = [];
+  // fields the result gave no value for (nothing was sent to Salesforce for them)
+  const missing = FIELD_LABELS.filter((l) => !(job && job.fields || []).some((x) => x.label === l));
+  if (job && missing.length) bits.push("not in the result: " + missing.join(", "));
+  if (!f) return bits.join(" · ");
+  if (f.ok === false) { bits.push(`Fields not filled: ${f.error || "unknown error"}`); return bits.join(" · "); }
   if (f.problem && f.problem.length) bits.push("fields to check: " + f.problem.join("; "));
   if (f.notfound && f.notfound.length) bits.push("not on the page: " + f.notfound.join(", "));
   if (f.saveFailed) bits.push("fields not saved, check required fields");
+  if (f.reviewForm) bits.push("fields filled but not saved: Techfill's review form is open, click Save");
   return bits.join(" · "); // empty = all good, nothing to say
 }
 
@@ -574,10 +599,15 @@ async function postAndFill(tabId, job, text, opts) {
   const res = await sendPost(tabId, job, text, opts);
   if (!res.ok) return res;
   if (!FILL_FIELDS || !job.fields || !job.fields.length) return res;
+  const payload = { action: "moonfillFill", recordId: job.recordId, fields: job.fields, save: true };
   try {
-    res.fill = await chrome.tabs.sendMessage(tabId, {
-      action: "moonfillFill", recordId: job.recordId, fields: job.fields, save: true
-    });
+    res.fill = await chrome.tabs.sendMessage(tabId, payload);
+    if (res.fill && res.fill.ok === false && /not visible/i.test(res.fill.error || "")) {
+      // the result was posted from a background tab: the form needs a visible page, so bring the tab forward once
+      await chrome.tabs.update(tabId, { active: true });
+      await sleep(600);
+      res.fill = await chrome.tabs.sendMessage(tabId, payload);
+    }
   } catch (e) {
     res.fill = { ok: false, error: e.message };
   }
@@ -595,7 +625,8 @@ async function sendPost(tabId, job, text, opts) {
         recordId: job.recordId,
         share: AUTO_SHARE,
         fast: !!opts.fast,
-        activated: !!opts.activated
+        activated: !!opts.activated,
+        visibleWaitMs: opts.visibleWaitMs
       });
     } catch (e) {
       if (!/Receiving end does not exist|Could not establish connection/.test(e.message)) {
@@ -617,9 +648,10 @@ async function postInNewWindow(job, text) {
       url: job.recordUrl, type: "normal", focused: true, state: "normal", width: 1200, height: 800
     });
     tr(job, "temporary window opened");
+    try { await chrome.windows.update(win.id, { focused: true, drawAttention: true }); } catch (e) { /* ignore */ }
     const tabId = win.tabs && win.tabs[0] && win.tabs[0].id;
     if (!tabId) { res = { ok: false, retry: true, hidden: true, error: "could not open a window" }; return res; }
-    res = await postAndFill(tabId, job, text, { fast: false, activated: true });
+    res = await postAndFill(tabId, job, text, { fast: false, activated: true, visibleWaitMs: 8000 });
     tr(job, "temporary window: " + describe(res));
     if (res.ok && (!AUTO_SHARE || keepsTabOpen(res))) { win = null; return res; } // leave it open for review
     if (res.ok) await sleep(1500); // let Share / Save settle

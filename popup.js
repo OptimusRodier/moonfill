@@ -147,6 +147,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (area === "local") render();
   });
 
+  document.getElementById("presetsBtn").addEventListener("click", () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, async ([tab]) => {
+      try { // on an Implementation record the presets open as a panel next to the orb
+        const r = tab && (await chrome.tabs.sendMessage(tab.id, { action: "openPresetsPanel" }));
+        if (r && r.ok) { window.close(); return; }
+      } catch (e) { /* not a record page: use the window */ }
+      chrome.runtime.sendMessage({ action: "openPresets" });
+      window.close();
+    });
+  });
   document.getElementById("historyBtn").addEventListener("click", () => {
     view = view === "history" ? "scans" : "history";
     render();

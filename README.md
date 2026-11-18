@@ -1,5 +1,9 @@
 # 🌙 Moonfill
 
+> **Merged build (Moonfill 2.1 = Moonfill 2.0 + Techfill 0.3).** Start with `docs/MERGED_BUILD.md`; full specifications: `docs/MOONFILL_SPEC.md`, `docs/TECHFILL_SPEC.md`; how everything fits: `docs/INTEGRATION_BRIEF.md`.
+>
+> Techfill: on an Implementation record a draggable round pen button fills the technical checklist from a preset (hover it for the menu).
+
 **Run a Moonpull integration scan from Salesforce in one click, and get the result posted in the record's Chatter automatically.**
 
 Moonfill is a browser extension for Awin agents. Before, you had to fill in the Moonpull form, wait for the result in Teams, copy it and paste it into Salesforce. Now you click one button and Moonfill does all of it.
@@ -112,7 +116,7 @@ When you report a problem, please send a screenshot of the Moonfill card, the pr
 
 Built by Rodier for Awin agents. Questions, bugs and ideas: [GitHub Issues](https://github.com/OptimusRodier/moonfill) or contact the project owner.
 
-## v2.1
+## v2.0
 
 - **Fills Salesforce fields from the result**, silently, right after the result is pasted: Moonpull Status, Consent Signals, Transparency & Consent Framework Plugin, AASAF and Consent Management Platform are set (existing values replaced) and saved. No setting; the notification only mentions fields that need a look.
 - **Record page buttons:** Submit Moonpull form (left), IR (middle), New Implementation (right). One **IR button** on the Case page. Colours and spacing are in the `injectStyles` block of `salesforce.js`.
